@@ -708,8 +708,12 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
 
         let modulus = FF::order();
         let (overflow_biguint, sum_reduced) = sum_biguint.div_rem(&modulus);
-        let overflow = overflow_biguint.to_u64_digits()[0] as u32;
-
+        let overflow;
+        if overflow_biguint.is_zero(){
+            overflow = 0;
+        } else{
+           overflow = overflow_biguint.to_u64_digits()[0] as u32;
+        }
         out_buffer.set_biguint_target(&self.sum.value, &sum_reduced)?;
         out_buffer.set_u32_target(self.overflow, overflow)
     }
