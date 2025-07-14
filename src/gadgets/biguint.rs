@@ -68,6 +68,8 @@ pub trait CircuitBuilderBiguint<F: RichField + Extendable<D>, const D: usize> {
 
     fn mul_biguint(&mut self, a: &BigUintTarget, b: &BigUintTarget) -> BigUintTarget;
 
+    fn square_biguint(&mut self, a: &BigUintTarget) -> BigUintTarget;
+
     fn mul_biguint_by_bool(&mut self, a: &BigUintTarget, b: BoolTarget) -> BigUintTarget;
 
     /// Returns x * y + z. This is no more efficient than mul-then-add; it's purely for convenience (only need to call one CircuitBuilder function).
@@ -207,6 +209,38 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
                 let (product, carry) = self.mul_u32(a.limbs[i], b.limbs[j]);
                 to_add[i + j].push(product);
                 to_add[i + j + 1].push(carry);
+            }
+        }
+
+        let mut combined_limbs = vec![];
+        let mut carry = self.zero_u32();
+        for summands in &mut to_add {
+            let (new_result, new_carry) = self.add_u32s_with_carry(summands, carry);
+            combined_limbs.push(new_result);
+            carry = new_carry;
+        }
+        combined_limbs.push(carry);
+
+        BigUintTarget {
+            limbs: combined_limbs,
+        }
+    }
+
+    fn square_biguint(&mut self, a: &BigUintTarget) -> BigUintTarget {
+        let n = a.limbs.len();
+        let total_limbs = n * 2;
+
+        let mut to_add = vec![vec![]; total_limbs];
+        for i in 0..n {
+            for j in 0..(i + 1) {
+                let (product, carry) = self.mul_u32(a.limbs[i], a.limbs[j]);
+                to_add[i + j].push(product);
+                to_add[i + j + 1].push(carry);
+                //do the other way round
+                if j != i{
+                    to_add[i + j].push(product);
+                    to_add[i + j + 1].push(carry);
+                }
             }
         }
 
