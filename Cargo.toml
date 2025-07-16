@@ -20,6 +20,7 @@ plonky2_gate_utils = { git = "https://github.com/dgulotta/plonky2-gate-utils.git
 rand = "0.8.4"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 static_assertions = "1.1.0"
+log = "0.4.27"
 
 [dev-dependencies]
 rand = { version = "0.8.4", default-features = false, features = ["getrandom"] }

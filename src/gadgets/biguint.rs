@@ -19,8 +19,36 @@ use plonky2::{
 };
 use plonky2_gate_utils::SimpleGate;
 use plonky2_u32::gadgets::multiple_comparison::list_le_circuit;
-use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
+use plonky2_u32::gadgets::arithmetic_u32::{U32Target};
 
+// from base 2^from to base 2^to
+// requires from, to <= 32
+pub fn convert_base(x: &Vec<u32>, from: usize, to:usize) -> Vec<u32>{
+    let mut res: Vec<u32> = Vec::new();
+    let mut rem: u64 = 0;
+    let mut offset = 0;
+    let mask = (1u64<<to) - 1;
+
+    for i in x{
+        let i = i.clone();
+        rem += (i as u64) << offset;
+        offset += from;
+        while offset >= to{
+            let curr: u64 = rem & mask;
+            res.push(curr.try_into().expect("Value doesn't fit in u32"));
+            rem >>= to;
+            offset -= to;
+        }
+    }
+    if rem != 0{
+        res.push(rem.try_into().expect("Value doesn't fit in u32"));
+    }
+    assert!(mask < (1u64<<to));
+    for i in &res{
+        assert!((*i as u64) < (1u64<<to));
+    }
+    res
+}
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BigUintTarget<const BITS: usize> {
@@ -691,7 +719,7 @@ mod test {
     use plonky2_gate_utils::GateAdapter;
     use rand::{Rng, rngs::OsRng};
 
-    use super::{BigUintTarget, CircuitBuilderBigUint, ConvolutionGate};
+    use super::{BigUintTarget, CircuitBuilderBigUint, ConvolutionGate, convert_base};
 
     type F = GoldilocksField;
     const D: usize = 2;
@@ -737,6 +765,15 @@ mod test {
         let config = CircuitConfig::standard_recursion_config();
         let gate = GateAdapter::<GoldilocksField, ConvolutionGate>::new_from_config(&config);
         test_eval_fns::<_, PoseidonGoldilocksConfig, _, 2>(gate)
+    }
+    #[test]
+    fn test_convert_base() -> anyhow::Result<()> {
+        let x: BigUint = OsRng.sample(RandomBits::new(1024));
+        let x_base_29 = convert_base(&x.to_u32_digits(), 32, 29);
+        let x_base_32 = convert_base(&x_base_29, 29, 32);
+        
+        assert!(x_base_32 == x.to_u32_digits());
+        Ok(())
     }
 }
 
