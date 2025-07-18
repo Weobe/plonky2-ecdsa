@@ -13,7 +13,6 @@ use crate::gadgets::biguint::BigUintTarget;
 use crate::gadgets::nonnative::{NonNativeTarget, BITS};
 
 pub trait CircuitBuilderSplit<F: RichField + Extendable<D>, const D: usize> {
-    fn split_u32_to_4_bit_limbs(&mut self, val: UXTarget<BITS>) -> Vec<Target>;
 
     fn split_nonnative_to_4_bit_limbs<FF: Field>(
         &mut self,
@@ -24,75 +23,60 @@ pub trait CircuitBuilderSplit<F: RichField + Extendable<D>, const D: usize> {
         &mut self,
         val: &NonNativeTarget<FF>,
     ) -> Vec<Target>;
-
-    // Note: assumes its inputs are 4-bit limbs, and does not range-check.
-    // fn recombine_nonnative_4_bit_limbs<FF: Field>(
-    //     &mut self,
-    //     limbs: Vec<Target>,
-    // ) -> NonNativeTarget<FF>;
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderSplit<F, D>
     for CircuitBuilder<F, D>
 {
-    fn split_u32_to_4_bit_limbs(&mut self, val: UXTarget<BITS>) -> Vec<Target> {
-        let two_bit_limbs = self.split_le_base::<4>(val.0, div_ceil(BITS, 4) * 2);
-        let four = self.constant(F::from_canonical_usize(4));
-        let combined_limbs = two_bit_limbs
-            .iter()
-            .tuples()
-            .map(|(&a, &b)| self.mul_add(b, four, a))
-            .collect();
-
-        combined_limbs
-    }
 
     fn split_nonnative_to_4_bit_limbs<FF: Field>(
         &mut self,
         val: &NonNativeTarget<FF>,
     ) -> Vec<Target> {
-        val.value
+        let mut bits: Vec<Target> = val.value
             .limbs
             .iter()
-            .flat_map(|&l| self.split_u32_to_4_bit_limbs(l))
-            .collect()
+            .flat_map(|&l| self.split_le_base::<2>(l.0, BITS))
+            .collect();
+        while bits.len() % 4 !=0{
+            bits.push(self.zero());
+        }
+        let two = self.constant(F::from_canonical_usize(2));
+        let four = self.constant(F::from_canonical_usize(4));
+        let combined_limbs = bits
+            .iter()
+            .tuples()
+            .map(|(&a, &b, &c, &d)| {
+                let lower = self.mul_add(b, two, a);
+                let upper = self.mul_add(d, two, c);
+                self.mul_add(upper, four, lower)
+            })
+            .collect();
+        combined_limbs
     }
 
     fn split_nonnative_to_2_bit_limbs<FF: Field>(
         &mut self,
         val: &NonNativeTarget<FF>,
     ) -> Vec<Target> {
-        val.value
+        let mut bits: Vec<Target> = val.value
             .limbs
             .iter()
-            .flat_map(|&l| self.split_le_base::<4>(l.0, div_ceil(BITS, 2)))
-            .collect()
+            .flat_map(|&l| self.split_le_base::<2>(l.0, BITS))
+            .collect();
+        while bits.len() % 2 !=0{
+            bits.push(self.zero());
+        }
+        let two = self.constant(F::from_canonical_usize(2));
+        let combined_limbs = bits
+            .iter()
+            .tuples()
+            .map(|(&a, &b)| {
+                self.mul_add(b, two, a)
+            })
+            .collect();
+        combined_limbs
     }
-
-    // Note: assumes its inputs are 4-bit limbs, and does not range-check.
-    // fn recombine_nonnative_4_bit_limbs<FF: Field>(
-    //     &mut self,
-    //     limbs: Vec<Target>,
-    // ) -> NonNativeTarget<FF> {
-    //     let base = self.constant_ux(1 << 4);
-        
-    //     let ux_limbs = limbs
-    //         .chunks(8)
-    //         .map(|chunk| {
-    //             let mut combined_chunk = self.zero_ux();
-    //             for i in (0..8).rev() {
-    //                 let (low, _high) = self.mul_add_ux(combined_chunk, base, UXTarget(chunk[i]));
-    //                 combined_chunk = low;
-    //             }
-    //             combined_chunk
-    //         })
-    //         .collect();
-
-    //     NonNativeTarget {
-    //         value: BigUintTarget { limbs: ux_limbs },
-    //         _phantom: PhantomData,
-    //     }
-    // }
 }
 
 #[cfg(test)]

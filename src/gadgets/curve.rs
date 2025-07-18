@@ -136,14 +136,14 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
 
     fn curve_double<C: Curve>(&mut self, p: &AffinePointTarget<C>) -> AffinePointTarget<C> {
         let AffinePointTarget { x, y } = p;
-        let double_y = self.add_nonnative_range_check_optional(y, y, false);
+        let double_y = self.add_nonnative_range_check_optional(y, y, true);
         let inv_double_y = self.inv_nonnative(&double_y);
         let x_squared = self.square_nonnative(x);
         let a = self.constant_nonnative(C::A);
-        let triple_xx_a = self.add_many_nonnative_range_check_optional(&[x_squared.clone(), x_squared.clone(), x_squared, a], false);
+        let triple_xx_a = self.add_many_nonnative_range_check_optional(&[x_squared.clone(), x_squared.clone(), x_squared, a], true);
         let lambda = self.mul_nonnative(&triple_xx_a, &inv_double_y);
         let lambda_squared = self.square_nonnative(&lambda);
-        let x_double = self.add_nonnative_range_check_optional(x, x, false);
+        let x_double = self.add_nonnative_range_check_optional(x, x, true);
 
         let x3 = self.sub_nonnative(&lambda_squared, &x_double);
 
@@ -422,7 +422,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_curve_mul() -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
@@ -455,7 +454,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_curve_random() -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;

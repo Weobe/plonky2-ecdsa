@@ -67,7 +67,7 @@ pub fn verify_p256_message_circuit<F: RichField + Extendable<D>, const D: usize>
     let u2 = builder.mul_nonnative(&r, &c);
 
     let point1 = fixed_base_curve_mul_circuit(builder, P256::GENERATOR_AFFINE, &u1);
-    let point2 = builder.curve_scalar_mul_windowed(&pk.0, &u2);
+    let point2 = builder.curve_scalar_mul(&pk.0, &u2);
     let point = builder.curve_add(&point1, &point2);
 
     let x = NonNativeTarget::<P256Scalar> {
@@ -162,25 +162,20 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_ecdsa_circuit_narrow() -> Result<()> {
         test_ecdsa_circuit_with_config(CircuitConfig::standard_ecc_config())
     }
 
     #[test]
-    #[ignore]
     fn test_ecdsa_circuit_wide() -> Result<()> {
         test_ecdsa_circuit_with_config(CircuitConfig::wide_ecc_config())
     }
 
-    #[test]
-    #[ignore]
-    fn test_p256_ecdsa_circuit_narrow() -> Result<()> {
+    #[test]    fn test_p256_ecdsa_circuit_narrow() -> Result<()> {
         test_p256_ecdsa_circuit_with_config(CircuitConfig::standard_ecc_config())
     }
 
     #[test]
-    #[ignore]
     fn test_p256_ecdsa_circuit_wide() -> Result<()> {
         test_p256_ecdsa_circuit_with_config(CircuitConfig::wide_ecc_config())
     }

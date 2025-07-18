@@ -149,8 +149,9 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
 
         let precomputation = self.precompute_window(p);
         let zero = self.zero();
-
+        println!("{}", n.value.limbs.len());
         let windows = self.split_nonnative_to_4_bit_limbs(n);
+        println!("{}", windows.len());
         for i in (0..windows.len()).rev() {
             result = self.curve_repeated_double(&result, WINDOW_SIZE);
             let window = windows[i];
@@ -217,9 +218,7 @@ mod tests {
         data.verify(proof)
     }
 
-    #[test]
-    #[ignore]
-    fn test_curve_windowed_mul() -> Result<()> {
+    #[test]    fn test_curve_windowed_mul() -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;

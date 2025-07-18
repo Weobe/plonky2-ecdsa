@@ -560,11 +560,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
     // Split a nonnative field element to bits.
     fn split_nonnative_to_bits<FF: Field>(&mut self, x: &NonNativeTarget<FF>) -> Vec<BoolTarget> {
         let num_limbs = x.value.num_limbs();
-        let mut result = Vec::with_capacity(num_limbs * 32);
+        let mut result = Vec::with_capacity(num_limbs * BITS);
 
         for i in 0..num_limbs {
             let limb = x.value.get_limb(i);
-            let bit_targets = self.split_le_base::<2>(limb.0, 32);
+            let bit_targets = self.split_le_base::<2>(limb.0, BITS);
             let mut bits: Vec<_> = bit_targets
                 .iter()
                 .map(|&t| BoolTarget::new_unsafe(t))
