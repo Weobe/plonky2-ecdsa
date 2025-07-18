@@ -15,9 +15,10 @@ log = "0.4.27"
 num = { version = "0.4.0", default-features = false }
 plonky2 = { git = "https://github.com/0xPolygonZero/plonky2" }
 plonky2_maybe_rayon = { git = "https://github.com/0xPolygonZero/plonky2" }  
-plonky2_u32 = { git = "https://github.com/ax0/plonky2-u32" }
+plonky2_u32 = { path = "../plonky2-u32" }
 rand = "0.8.4"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = "1.0.140"
 
 [dev-dependencies]
 rand = { version = "0.8.4", default-features = false, features = ["getrandom"] }

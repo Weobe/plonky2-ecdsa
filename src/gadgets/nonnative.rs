@@ -15,17 +15,19 @@ use plonky2::iop::generator::{GeneratedValues, SimpleGenerator};
 use plonky2::iop::target::{BoolTarget, Target};
 use plonky2::iop::witness::{PartitionWitness, WitnessWrite};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
-use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
-use plonky2_u32::gadgets::range_check::range_check_u32_circuit;
-use plonky2_u32::witness::GeneratedValuesU32;
+use plonky2_u32::gadgets::arithmetic_ux::{CircuitBuilderUX, UXTarget};
+use plonky2_u32::gadgets::range_check::range_check_ux_circuit;
+use plonky2_u32::witness::GeneratedValuesUX;
 
 use crate::gadgets::biguint::{
     BigUintTarget, CircuitBuilderBiguint, GeneratedValuesBigUint, WitnessBigUint,
 };
 
+pub const BITS: usize = 29;
+
 #[derive(Clone, Debug)]
 pub struct NonNativeTarget<FF: Field> {
-    pub value: BigUintTarget,
+    pub value: BigUintTarget<BITS>,
     pub(crate) _phantom: PhantomData<FF>,
 }
 
@@ -44,15 +46,15 @@ impl<FF: Field> NonNativeTarget<FF> {
 
 pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> {
     fn num_nonnative_limbs<FF: Field>() -> usize {
-        div_ceil(FF::BITS, 32)
+        div_ceil(FF::BITS, BITS)
     }
 
-    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget) -> NonNativeTarget<FF>;
+    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget<BITS>) -> NonNativeTarget<FF>;
 
     fn nonnative_to_canonical_biguint<FF: Field>(
         &mut self,
         x: &NonNativeTarget<FF>,
-    ) -> BigUintTarget;
+    ) -> BigUintTarget<BITS>;
 
     fn constant_nonnative<FF: PrimeField>(&mut self, x: FF) -> NonNativeTarget<FF>;
 
@@ -137,7 +139,7 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
     fn inv_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>) -> NonNativeTarget<FF>;
 
     /// Returns `x % |FF|` as a `NonNativeTarget`.
-    fn reduce<FF: Field>(&mut self, x: &BigUintTarget) -> NonNativeTarget<FF>;
+    fn reduce<FF: Field>(&mut self, x: &BigUintTarget<BITS>) -> NonNativeTarget<FF>;
 
     fn reduce_nonnative<FF: Field>(&mut self, x: &NonNativeTarget<FF>) -> NonNativeTarget<FF>;
 
@@ -157,10 +159,10 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
     for CircuitBuilder<F, D>
 {
     fn num_nonnative_limbs<FF: Field>() -> usize {
-        div_ceil(FF::BITS, 32)
+        div_ceil(FF::BITS, BITS)
     }
 
-    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget) -> NonNativeTarget<FF> {
+    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget<BITS>) -> NonNativeTarget<FF> {
         NonNativeTarget {
             value: x.clone(),
             _phantom: PhantomData,
@@ -170,7 +172,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
     fn nonnative_to_canonical_biguint<FF: Field>(
         &mut self,
         x: &NonNativeTarget<FF>,
-    ) -> BigUintTarget {
+    ) -> BigUintTarget<BITS> {
         x.value.clone()
     }
 
@@ -311,7 +313,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         }
 
         let sum = self.add_virtual_nonnative_target::<FF>();
-        let overflow = self.add_virtual_u32_target();
+        let overflow = self.add_virtual_ux_target();
         let summands = to_add.to_vec();
 
         self.add_simple_generator(NonNativeMultipleAddsGenerator::<F, D, FF> {
@@ -321,8 +323,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
             _phantom: PhantomData,
         });
 
-        range_check_u32_circuit(self, sum.value.limbs.clone());
-        range_check_u32_circuit(self, vec![overflow]);
+        range_check_ux_circuit::<F, D, BITS>(self, sum.value.limbs.clone());
+        range_check_ux_circuit::<F, D, BITS>(self, vec![overflow]);
 
         let sum_expected = summands
             .iter()
@@ -355,7 +357,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         }
 
         let sum = self.add_virtual_nonnative_target::<FF>();
-        let overflow = self.add_virtual_u32_target();
+        let overflow = self.add_virtual_ux_target();
         let summands = to_add.to_vec();
 
         self.add_simple_generator(NonNativeMultipleAddsGenerator::<F, D, FF> {
@@ -365,8 +367,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
             _phantom: PhantomData,
         });
 
-        range_check_u32_circuit(self, sum.value.limbs.clone());
-        range_check_u32_circuit(self, vec![overflow]);
+        range_check_ux_circuit(self, sum.value.limbs.clone());
+        range_check_ux_circuit(self, vec![overflow]);
 
         let sum_expected = summands
             .iter()
@@ -407,7 +409,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
             _phantom: PhantomData,
         });
 
-        range_check_u32_circuit(self, diff.value.limbs.clone());
+        range_check_ux_circuit(self, diff.value.limbs.clone());
         self.assert_bool(overflow);
 
         let diff_plus_b = self.add_biguint(&diff.value, &b.value);
@@ -437,8 +439,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
             _phantom: PhantomData,
         });
 
-        range_check_u32_circuit(self, prod.value.limbs.clone());
-        range_check_u32_circuit(self, overflow.limbs.clone());
+        range_check_ux_circuit(self, prod.value.limbs.clone());
+        range_check_ux_circuit(self, overflow.limbs.clone());
 
         let prod_expected = self.square_biguint(&a.value);
 
@@ -468,8 +470,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
             _phantom: PhantomData,
         });
 
-        range_check_u32_circuit(self, prod.value.limbs.clone());
-        range_check_u32_circuit(self, overflow.limbs.clone());
+        range_check_ux_circuit(self, prod.value.limbs.clone());
+        range_check_ux_circuit(self, overflow.limbs.clone());
 
         let prod_expected = self.mul_biguint(&a.value, &b.value);
 
@@ -529,7 +531,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
     }
 
     /// Returns `x % |FF|` as a `NonNativeTarget`.
-    fn reduce<FF: Field>(&mut self, x: &BigUintTarget) -> NonNativeTarget<FF> {
+    fn reduce<FF: Field>(&mut self, x: &BigUintTarget<BITS>) -> NonNativeTarget<FF> {
         let modulus = FF::order();
         let order_target = self.constant_biguint(&modulus);
         let value = self.rem_biguint(x, &order_target);
@@ -546,7 +548,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
     }
 
     fn bool_to_nonnative<FF: Field>(&mut self, b: &BoolTarget) -> NonNativeTarget<FF> {
-        let limbs = vec![U32Target(b.target)];
+        let limbs = vec![UXTarget(b.target)];
         let value = BigUintTarget { limbs };
 
         NonNativeTarget {
@@ -631,9 +633,10 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         } else {
             (false, sum_biguint)
         };
-
+        
         out_buffer.set_biguint_target(&self.sum.value, &sum_reduced)?;
-        out_buffer.set_bool_target(self.overflow, overflow)
+        let tmp = out_buffer.set_bool_target(self.overflow, overflow);
+        tmp
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -667,7 +670,7 @@ struct NonNativeMultipleAddsGenerator<F: RichField + Extendable<D>, const D: usi
 {
     summands: Vec<NonNativeTarget<FF>>,
     sum: NonNativeTarget<FF>,
-    overflow: U32Target,
+    overflow: UXTarget<BITS>,
     _phantom: PhantomData<F>,
 }
 
@@ -715,7 +718,8 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
            overflow = overflow_biguint.to_u64_digits()[0] as u32;
         }
         out_buffer.set_biguint_target(&self.sum.value, &sum_reduced)?;
-        out_buffer.set_u32_target(self.overflow, overflow)
+        let tmp = out_buffer.set_ux_target(self.overflow, overflow);
+        tmp
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -742,7 +746,7 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             })
             .collect::<IoResult<_>>()?;
         let sum = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
-        let overflow = U32Target(src.read_target()?);
+        let overflow = UXTarget(src.read_target()?);
 
         Ok(Self {
             summands,
@@ -796,9 +800,10 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         } else {
             (modulus + a_biguint - b_biguint, true)
         };
-
         out_buffer.set_biguint_target(&self.diff.value, &diff_biguint)?;
-        out_buffer.set_bool_target(self.overflow, overflow)
+        let tmp = out_buffer.set_bool_target(self.overflow, overflow);
+        tmp
+
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -832,7 +837,7 @@ struct NonNativeMultiplicationGenerator<F: RichField + Extendable<D>, const D: u
     a: NonNativeTarget<FF>,
     b: NonNativeTarget<FF>,
     prod: NonNativeTarget<FF>,
-    overflow: BigUintTarget,
+    overflow: BigUintTarget<BITS>,
     _phantom: PhantomData<F>,
 }
 
@@ -868,9 +873,9 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
 
         let modulus = FF::order();
         let (overflow_biguint, prod_reduced) = prod_biguint.div_rem(&modulus);
-
         out_buffer.set_biguint_target(&self.prod.value, &prod_reduced)?;
-        out_buffer.set_biguint_target(&self.overflow, &overflow_biguint)
+        let tmp = out_buffer.set_biguint_target(&self.overflow, &overflow_biguint);
+        return tmp
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -902,8 +907,8 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
 #[derive(Debug)]
 struct NonNativeInverseGenerator<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> {
     x: NonNativeTarget<FF>,
-    inv: BigUintTarget,
-    div: BigUintTarget,
+    inv: BigUintTarget<BITS>,
+    div: BigUintTarget<BITS>,
     _phantom: PhantomData<F>,
 }
 
@@ -931,9 +936,10 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         let prod = x_biguint * &inv_biguint;
         let modulus = FF::order();
         let (div, _rem) = prod.div_rem(&modulus);
-
         out_buffer.set_biguint_target(&self.div, &div)?;
-        out_buffer.set_biguint_target(&self.inv, &inv_biguint)
+        let tmp =  out_buffer.set_biguint_target(&self.inv, &inv_biguint);
+        tmp
+       
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {

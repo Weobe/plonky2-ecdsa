@@ -1,7 +1,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
-
+use num::integer::div_ceil;
 use num::BigUint;
 use plonky2::field::extension::Extendable;
 use plonky2::field::types::{Field, Sample};
@@ -10,12 +10,12 @@ use plonky2::hash::keccak::KeccakHash;
 use plonky2::iop::target::{BoolTarget, Target};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2::plonk::config::{GenericHashOut, Hasher};
-use plonky2_u32::gadgets::arithmetic_u32::{CircuitBuilderU32, U32Target};
+use plonky2_u32::gadgets::arithmetic_ux::{CircuitBuilderUX, UXTarget};
 
 use crate::curve::curve_types::{Curve, CurveScalar};
 use crate::gadgets::biguint::BigUintTarget;
 use crate::gadgets::curve::{AffinePointTarget, CircuitBuilderCurve};
-use crate::gadgets::nonnative::{CircuitBuilderNonNative, NonNativeTarget};
+use crate::gadgets::nonnative::{CircuitBuilderNonNative, NonNativeTarget, BITS};
 use crate::gadgets::split_nonnative::CircuitBuilderSplit;
 
 const WINDOW_SIZE: usize = 4;
@@ -75,8 +75,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
         access_index: Target,
         v: Vec<AffinePointTarget<C>>,
     ) -> AffinePointTarget<C> {
-        let num_limbs = C::BaseField::BITS / 32;
-        let zero = self.zero_u32();
+        let num_limbs = div_ceil(C::BaseField::BITS, BITS);
+        let zero = self.zero_ux();
         let x_limbs: Vec<Vec<_>> = (0..num_limbs)
             .map(|i| {
                 v.iter()
@@ -94,11 +94,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
 
         let selected_x_limbs: Vec<_> = x_limbs
             .iter()
-            .map(|limbs| U32Target(self.random_access(access_index, limbs.clone())))
+            .map(|limbs| UXTarget(self.random_access(access_index, limbs.clone())))
             .collect();
         let selected_y_limbs: Vec<_> = y_limbs
             .iter()
-            .map(|limbs| U32Target(self.random_access(access_index, limbs.clone())))
+            .map(|limbs| UXTarget(self.random_access(access_index, limbs.clone())))
             .collect();
 
         let x = NonNativeTarget {
@@ -211,7 +211,6 @@ mod tests {
         let selected = builder.random_access_curve_points(access_index_target, points.clone());
         let expected = points[access_index].clone();
         builder.connect_affine_point(&selected, &expected);
-
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
 
