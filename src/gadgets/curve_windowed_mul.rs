@@ -132,14 +132,17 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
         p: &AffinePointTarget<C>,
         n: &NonNativeTarget<C::ScalarField>,
     ) -> AffinePointTarget<C> {
+        let windows = self.split_nonnative_to_4_bit_limbs(n);
+
         let hash_0 = KeccakHash::<25>::hash_no_pad(&[F::ZERO]);
         let hash_0_scalar = C::ScalarField::from_noncanonical_biguint(BigUint::from_bytes_le(
             &GenericHashOut::<F>::to_bytes(&hash_0),
         ));
         let starting_point = CurveScalar(hash_0_scalar) * C::GENERATOR_PROJECTIVE;
+        
         let starting_point_multiplied = {
             let mut cur = starting_point;
-            for _ in 0..C::ScalarField::BITS {
+            for _ in 0..(windows.len() * 4){
                 cur = cur.double();
             }
             cur
@@ -149,8 +152,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
 
         let precomputation = self.precompute_window(p);
         let zero = self.zero();
-        println!("{}", n.value.limbs.len());
-        let windows = self.split_nonnative_to_4_bit_limbs(n);
+        
         println!("{}", windows.len());
         for i in (0..windows.len()).rev() {
             result = self.curve_repeated_double(&result, WINDOW_SIZE);

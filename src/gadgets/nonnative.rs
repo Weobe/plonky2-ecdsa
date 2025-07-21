@@ -18,6 +18,7 @@ use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2_u32::gadgets::arithmetic_ux::{CircuitBuilderUX, UXTarget};
 use plonky2_u32::gadgets::range_check::range_check_ux_circuit;
 use plonky2_u32::witness::GeneratedValuesUX;
+use crate::gates::mul_nonnative::{MulNonnativeGate, CheckSumGate};
 
 use crate::gadgets::biguint::{
     BigUintTarget, CircuitBuilderBiguint, GeneratedValuesBigUint, WitnessBigUint,
@@ -116,11 +117,6 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
-    ) -> NonNativeTarget<FF>;
-
-    fn square_nonnative<FF: PrimeField>(
-        &mut self,
-        a: &NonNativeTarget<FF>,
     ) -> NonNativeTarget<FF>;
 
     fn mul_nonnative<FF: PrimeField>(
@@ -421,65 +417,83 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         diff
     }
 
-    fn square_nonnative<FF: PrimeField>(
-        &mut self,
-        a: &NonNativeTarget<FF>,
-    ) -> NonNativeTarget<FF> {
-        let prod = self.add_virtual_nonnative_target::<FF>();
-        let modulus = self.constant_biguint(&FF::order());
-        let overflow = self.add_virtual_biguint_target(
-            a.value.num_limbs() * 2 - modulus.num_limbs(),
-        );
-
-        self.add_simple_generator(NonNativeMultiplicationGenerator::<F, D, FF> {
-            a: a.clone(),
-            b: a.clone(),
-            prod: prod.clone(),
-            overflow: overflow.clone(),
-            _phantom: PhantomData,
-        });
-
-        range_check_ux_circuit(self, prod.value.limbs.clone());
-        range_check_ux_circuit(self, overflow.limbs.clone());
-
-        let prod_expected = self.square_biguint(&a.value);
-
-        let mod_times_overflow = self.mul_biguint(&modulus, &overflow);
-        let prod_actual = self.add_biguint(&prod.value, &mod_times_overflow);
-        self.connect_biguint(&prod_expected, &prod_actual);
-
-        prod
-    }
 
     fn mul_nonnative<FF: PrimeField>(
         &mut self,
-        a: &NonNativeTarget<FF>,
-        b: &NonNativeTarget<FF>,
+        x: &NonNativeTarget<FF>,
+        y: &NonNativeTarget<FF>,
     ) -> NonNativeTarget<FF> {
-        let prod = self.add_virtual_nonnative_target::<FF>();
-        let modulus = self.constant_biguint(&FF::order());
-        let overflow = self.add_virtual_biguint_target(
-            a.value.num_limbs() + b.value.num_limbs() - modulus.num_limbs(),
-        );
+        let mul_gate = MulNonnativeGate::<F, D, FF>::new_from_config(&self.config);
+        let constants = vec![];
+        let n = MulNonnativeGate::<F, D, FF>::num_limbs();
+        let x_wire_inds: Vec<_> = (0..n).map(|i| mul_gate.x(i)).collect();
+        let y_wire_inds: Vec<_> = (0..n).map(|i| mul_gate.y(i)).collect();
+        let q_wire_inds: Vec<_> = (0..n).map(|i| mul_gate.q(i)).collect();
+        let r_wire_inds: Vec<_> = (0..n).map(|i| mul_gate.r(i)).collect();
+        let check_sum_wire_inds: Vec<_> = (0..2* n - 1).map(|i| mul_gate.check_sum(i)).collect();
+        let row = self.add_gate(mul_gate, constants);
+        
+        for i in 0..n{
+            let wire_x = Target::wire(row, x_wire_inds[i]);
+            let wire_y = Target::wire(row, y_wire_inds[i]);
+            if i < x.value.limbs.len() {
+                let target_x = x.value.limbs[i];
+                self.connect(target_x.0, wire_x);
+            } else {
+                let zero = self.zero();
+                self.connect(zero, wire_x);
+            }
 
-        self.add_simple_generator(NonNativeMultiplicationGenerator::<F, D, FF> {
-            a: a.clone(),
-            b: b.clone(),
-            prod: prod.clone(),
-            overflow: overflow.clone(),
-            _phantom: PhantomData,
-        });
+            if i < y.value.limbs.len() {
+                let target_y = y.value.limbs[i];
+                self.connect(target_y.0, wire_y);
+            } else {
+                let zero = self.zero();
+                self.connect(zero, wire_y);
+            }
+        }
+        let q: Vec<UXTarget<BITS>> = (0..n).map(|i| {
+            UXTarget(Target::wire(row, q_wire_inds[i]))
+        }).collect();
+        let r: Vec<_> = (0..n).map(|i| {
+            UXTarget(Target::wire(row, r_wire_inds[i]))
+        }).collect();
+        
+        let check_sum: Vec<_> = (0..2 * n - 1).map(|i| {
+            UXTarget::<BITS>(Target::wire(row, check_sum_wire_inds[i]))
+        }).collect();
 
-        range_check_ux_circuit(self, prod.value.limbs.clone());
-        range_check_ux_circuit(self, overflow.limbs.clone());
+        //check that q * m + r - x * m = 0
+        let check_gate = CheckSumGate::<F, D>::new_from_config(&self.config);
+        let constants = vec![];
+        let row = self.add_gate(check_gate, constants);
+        let tmp_gate = CheckSumGate::<F, D>::new_from_config(&self.config);
+        let n = tmp_gate.num_limbs;
+        for i in 0..(2 * n - 1){
+            let wire_a = Target::wire(row, tmp_gate.a(i));
+            self.connect(check_sum[i].0, wire_a);
+        }
 
-        let prod_expected = self.mul_biguint(&a.value, &b.value);
+        let b: Vec<_> = (0..2 * n - 2).map(|i| {
+            UXTarget(Target::wire(row, tmp_gate.b(i)))
+        }).collect();
 
-        let mod_times_overflow = self.mul_biguint(&modulus, &overflow);
-        let prod_actual = self.add_biguint(&prod.value, &mod_times_overflow);
-        self.connect_biguint(&prod_expected, &prod_actual);
+        // range checks
 
-        prod
+        const CARRY_OVER_BASE : usize = 34;
+        range_check_ux_circuit::<F, D, BITS>(self, x.value.limbs.clone());
+        range_check_ux_circuit::<F, D, BITS>(self, y.value.limbs.clone());
+        range_check_ux_circuit::<F, D, BITS>(self, r.clone());
+        range_check_ux_circuit::<F, D, BITS>(self, q);
+        range_check_ux_circuit::<F, D, BITS>(self, r.clone());
+        range_check_ux_circuit::<F, D, CARRY_OVER_BASE>(self, b[0..8].to_vec());
+        range_check_ux_circuit::<F, D, CARRY_OVER_BASE>(self, b[8..].to_vec());
+        
+        let r_bigint = BigUintTarget{
+            limbs: r
+        };
+        let res = self.biguint_to_nonnative(&r_bigint);
+        res
     }
 
     fn mul_many_nonnative<FF: PrimeField>(
@@ -832,77 +846,6 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
     }
 }
 
-#[derive(Debug)]
-struct NonNativeMultiplicationGenerator<F: RichField + Extendable<D>, const D: usize, FF: Field> {
-    a: NonNativeTarget<FF>,
-    b: NonNativeTarget<FF>,
-    prod: NonNativeTarget<FF>,
-    overflow: BigUintTarget<BITS>,
-    _phantom: PhantomData<F>,
-}
-
-impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerator<F, D>
-    for NonNativeMultiplicationGenerator<F, D, FF>
-{
-    fn id(&self) -> String {
-        "NonNativeMultiplicationGenerator".into()
-    }
-
-    fn dependencies(&self) -> Vec<Target> {
-        self.a
-            .value
-            .limbs
-            .iter()
-            .cloned()
-            .chain(self.b.value.limbs.clone())
-            .map(|l| l.0)
-            .collect()
-    }
-
-    fn run_once(
-        &self,
-        witness: &PartitionWitness<F>,
-        out_buffer: &mut GeneratedValues<F>,
-    ) -> Result<()> {
-        let a = FF::from_noncanonical_biguint(witness.get_biguint_target(self.a.value.clone()));
-        let b = FF::from_noncanonical_biguint(witness.get_biguint_target(self.b.value.clone()));
-        let a_biguint = a.to_canonical_biguint();
-        let b_biguint = b.to_canonical_biguint();
-
-        let prod_biguint = a_biguint * b_biguint;
-
-        let modulus = FF::order();
-        let (overflow_biguint, prod_reduced) = prod_biguint.div_rem(&modulus);
-        out_buffer.set_biguint_target(&self.prod.value, &prod_reduced)?;
-        let tmp = out_buffer.set_biguint_target(&self.overflow, &overflow_biguint);
-        return tmp
-    }
-
-    fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
-        dst.write_target_vec(&self.a.to_target_vec())?;
-        dst.write_target_vec(&self.b.to_target_vec())?;
-        dst.write_target_vec(&self.prod.to_target_vec())?;
-        dst.write_target_vec(&self.overflow.to_target_vec())
-    }
-
-    fn deserialize(src: &mut Buffer, _common_data: &CommonCircuitData<F, D>) -> IoResult<Self>
-    where
-        Self: Sized,
-    {
-        let a = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
-        let b = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
-        let prod = NonNativeTarget::from_target_vec(&src.read_target_vec()?);
-        let overflow = BigUintTarget::from_target_vec(&src.read_target_vec()?);
-
-        Ok(Self {
-            a,
-            b,
-            prod,
-            overflow,
-            _phantom: PhantomData,
-        })
-    }
-}
 
 #[derive(Debug)]
 struct NonNativeInverseGenerator<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> {
@@ -1080,21 +1023,29 @@ mod tests {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
+        let n = 10;
         let x_ff = FF::rand();
         let y_ff = FF::rand();
-        let product_ff = x_ff * y_ff;
-
+        let mut product_ff = x_ff * y_ff;
+        
         let config = CircuitConfig::standard_ecc_config();
         let pw = PartialWitness::new();
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         let x = builder.constant_nonnative(x_ff);
         let y = builder.constant_nonnative(y_ff);
-        let product = builder.mul_nonnative(&x, &y);
+        
+        let mut product = builder.mul_nonnative(&x, &y);
+        let mut product_expected = builder.constant_nonnative(product_ff);
 
-        let product_expected = builder.constant_nonnative(product_ff);
+        for _ in 0..n{
+            let z_ff = FF::rand();
+            let z = builder.constant_nonnative(z_ff);
+            product_ff = product_ff * z_ff;
+            product = builder.mul_nonnative(&product, &z);
+            product_expected = builder.constant_nonnative(product_ff);
+        }
         builder.connect_nonnative(&product, &product_expected);
-
         let data = builder.build::<C>();
         let proof = data.prove(pw).unwrap();
         data.verify(proof)
