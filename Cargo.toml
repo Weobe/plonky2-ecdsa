@@ -16,7 +16,7 @@ log = "0.4.27"
 num = { version = "0.4.0", default-features = false }
 plonky2 = { git = "https://github.com/0xPolygonZero/plonky2" }
 plonky2_maybe_rayon = { git = "https://github.com/0xPolygonZero/plonky2" }  
-plonky2_u32 = { git = "https://github.com/Weobe/plonky2-ux.git", branch = "test" }
+plonky2_ux = { git = "https://github.com/Weobe/plonky2-ux.git", branch = "test" }
 rand = "0.8.4"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = "1.0.140"

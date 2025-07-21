@@ -15,9 +15,14 @@ use plonky2::iop::generator::{GeneratedValues, SimpleGenerator};
 use plonky2::iop::target::{BoolTarget, Target};
 use plonky2::iop::witness::{PartitionWitness, WitnessWrite};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
-use plonky2_u32::gadgets::arithmetic_ux::{CircuitBuilderUX, UXTarget};
-use plonky2_u32::gadgets::range_check::range_check_ux_circuit;
-use plonky2_u32::witness::GeneratedValuesUX;
+use plonky2_ux::{
+    gadgets::{
+        arithmetic_ux::{CircuitBuilderUX, UXTarget},
+        range_check::range_check_ux_circuit
+    },
+    witness::GeneratedValuesUX
+};
+
 use crate::gates::mul_nonnative::{MulNonnativeGate, CheckSumGate};
 
 use crate::gadgets::biguint::{
