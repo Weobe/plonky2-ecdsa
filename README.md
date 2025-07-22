@@ -1,3 +1,5 @@
+Fork of https://github.com/ainta/plonky2-ecdsa with BigInt operations in 29 bit chunks instead of 32, which allows more optimized nonnative multiplication. 
+
 ## License
 
 Licensed under either of
