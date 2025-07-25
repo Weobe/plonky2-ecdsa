@@ -43,7 +43,7 @@ pub trait CircuitBuilderWindowedMul<F: RichField + Extendable<D>, const D: usize
         &mut self,
         p: &AffinePointTarget<C>,
         n: &NonNativeTarget<C::ScalarField>,
-        range_check: bool
+        range_check: bool,
     ) -> AffinePointTarget<C>;
 }
 
@@ -132,7 +132,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
         &mut self,
         p: &AffinePointTarget<C>,
         n: &NonNativeTarget<C::ScalarField>,
-        range_check: bool
+        range_check: bool,
     ) -> AffinePointTarget<C> {
         let windows = self.split_nonnative_to_4_bit_limbs(n);
 
@@ -141,10 +141,10 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
             &GenericHashOut::<F>::to_bytes(&hash_0),
         ));
         let starting_point = CurveScalar(hash_0_scalar) * C::GENERATOR_PROJECTIVE;
-        
+
         let starting_point_multiplied = {
             let mut cur = starting_point;
-            for _ in 0..(windows.len() * 4){
+            for _ in 0..(windows.len() * 4) {
                 cur = cur.double();
             }
             cur
@@ -154,7 +154,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
 
         let precomputation = self.precompute_window(p);
         let zero = self.zero();
-        
+
         for i in (0..windows.len()).rev() {
             result = self.curve_repeated_double(&result, WINDOW_SIZE, false);
             let window = windows[i];
@@ -221,7 +221,8 @@ mod tests {
         data.verify(proof)
     }
 
-    #[test]    fn test_curve_windowed_mul() -> Result<()> {
+    #[test]
+    fn test_curve_windowed_mul() -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
@@ -242,7 +243,8 @@ mod tests {
 
         let g_target = builder.constant_affine_point(g);
         let neg_five_target = builder.constant_nonnative(neg_five);
-        let neg_five_g_actual = builder.curve_scalar_mul_windowed(&g_target, &neg_five_target, true);
+        let neg_five_g_actual =
+            builder.curve_scalar_mul_windowed(&g_target, &neg_five_target, true);
         builder.curve_assert_valid(&neg_five_g_actual);
 
         builder.connect_affine_point(&neg_five_g_expected, &neg_five_g_actual);

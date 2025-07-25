@@ -18,12 +18,12 @@ use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2_ux::{
     gadgets::{
         arithmetic_ux::{CircuitBuilderUX, UXTarget},
-        range_check::range_check_ux_circuit
+        range_check::range_check_ux_circuit,
     },
-    witness::GeneratedValuesUX
+    witness::GeneratedValuesUX,
 };
 
-use crate::gates::mul_nonnative::{MulNonnativeGate, CheckSumGate};
+use crate::gates::mul_nonnative::{CheckSumGate, MulNonnativeGate};
 
 use crate::gadgets::biguint::{
     BigUintTarget, CircuitBuilderBiguint, GeneratedValuesBigUint, WitnessBigUint,
@@ -55,7 +55,11 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         div_ceil(FF::BITS, BITS)
     }
 
-    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget<BITS>, range_check: bool) -> NonNativeTarget<FF>;
+    fn biguint_to_nonnative<FF: Field>(
+        &mut self,
+        x: &BigUintTarget<BITS>,
+        range_check: bool,
+    ) -> NonNativeTarget<FF>;
 
     fn nonnative_to_canonical_biguint<FF: Field>(
         &mut self,
@@ -80,19 +84,18 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         num_limbs: usize,
     ) -> NonNativeTarget<FF>;
 
-
     fn add_nonnative<FF: PrimeField>(
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF>;
 
     fn mul_nonnative_by_bool<FF: Field>(
         &mut self,
         a: &NonNativeTarget<FF>,
         b: BoolTarget,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF>;
 
     fn if_nonnative<FF: PrimeField>(
@@ -100,14 +103,13 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         b: BoolTarget,
         x: &NonNativeTarget<FF>,
         y: &NonNativeTarget<FF>,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF>;
-
 
     fn add_many_nonnative<FF: PrimeField>(
         &mut self,
         to_add: &[NonNativeTarget<FF>],
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF>;
 
     // Subtract two `NonNativeTarget`s.
@@ -115,25 +117,33 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF>;
 
     fn mul_nonnative<FF: PrimeField>(
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF>;
 
     fn mul_many_nonnative<FF: PrimeField>(
         &mut self,
         to_mul: &[NonNativeTarget<FF>],
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF>;
 
-    fn neg_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>, range_check: bool) -> NonNativeTarget<FF>;
+    fn neg_nonnative<FF: PrimeField>(
+        &mut self,
+        x: &NonNativeTarget<FF>,
+        range_check: bool,
+    ) -> NonNativeTarget<FF>;
 
-    fn inv_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>, range_check: bool) -> NonNativeTarget<FF>;
+    fn inv_nonnative<FF: PrimeField>(
+        &mut self,
+        x: &NonNativeTarget<FF>,
+        range_check: bool,
+    ) -> NonNativeTarget<FF>;
 
     /// Returns `x % |FF|` as a `NonNativeTarget`.
     fn reduce<FF: Field>(&mut self, x: &BigUintTarget<BITS>) -> NonNativeTarget<FF>;
@@ -149,17 +159,16 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         &mut self,
         x: &NonNativeTarget<FF>,
         b: BoolTarget,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF>;
 }
 
 // For all the functions with range_check argument, range_check should only be false in cases where this is not the last nonnative operation to be performed
-// The soundness of the nonnative arithmetic holds even when doing operations with numbers bigger than the modulus as long as 
+// The soundness of the nonnative arithmetic holds even when doing operations with numbers bigger than the modulus as long as
 // it is known that the output fits in 9 limbs of 29 bits each (i.e. <= 2^261)
-// 
+//
 // However if this is the final nonnative operation, it should be checked that the output lies in [0, modulus - 1]
 // When in doubt, having range_check=true is the safest option, this option is available mainly to optimize gate count when it is a bottleneck
-
 
 impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
     for CircuitBuilder<F, D>
@@ -168,10 +177,14 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         div_ceil(FF::BITS, BITS)
     }
 
-    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget<BITS>, range_check: bool) -> NonNativeTarget<FF> {
-        if range_check{
+    fn biguint_to_nonnative<FF: Field>(
+        &mut self,
+        x: &BigUintTarget<BITS>,
+        range_check: bool,
+    ) -> NonNativeTarget<FF> {
+        if range_check {
             let modulus = self.constant_biguint(&FF::order());
-            let cmp = self.cmp_biguint(&x, &modulus);
+            let cmp = self.cmp_biguint(x, &modulus);
             let one = self.one();
             self.connect(cmp.target, one);
         }
@@ -233,7 +246,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF> {
         let sum = self.add_virtual_nonnative_target::<FF>();
         let overflow = self.add_virtual_bool_target_unsafe();
@@ -253,7 +266,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         let sum_actual = self.add_biguint(&sum.value, &mod_times_overflow);
         self.connect_biguint(&sum_expected, &sum_actual);
         // Range-check result.
-        if range_check{
+        if range_check {
             let cmp = self.cmp_biguint(&sum.value, &modulus);
             let one = self.one();
             self.connect(cmp.target, one);
@@ -266,17 +279,17 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         a: &NonNativeTarget<FF>,
         b: BoolTarget,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF> {
         let value = self.mul_biguint_by_bool(&a.value, b);
-        if range_check{
+        if range_check {
             let modulus = self.constant_biguint(&FF::order());
             let cmp = self.cmp_biguint(&value, &modulus);
             let one = self.one();
             self.connect(cmp.target, one);
         }
         NonNativeTarget {
-            value: value,
+            value,
             _phantom: PhantomData,
         }
     }
@@ -286,7 +299,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         b: BoolTarget,
         x: &NonNativeTarget<FF>,
         y: &NonNativeTarget<FF>,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF> {
         let not_b = self.not(b);
         let maybe_x = self.mul_nonnative_by_bool(x, b, false);
@@ -294,12 +307,10 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         self.add_nonnative(&maybe_x, &maybe_y, range_check)
     }
 
-
-    
     fn add_many_nonnative<FF: PrimeField>(
         &mut self,
         to_add: &[NonNativeTarget<FF>],
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF> {
         if to_add.len() == 1 {
             return to_add[0].clone();
@@ -333,7 +344,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
 
         // Range-check result.
         // TODO: can potentially leave unreduced until necessary (e.g. when connecting values).
-        if range_check{
+        if range_check {
             let cmp = self.cmp_biguint(&sum.value, &modulus);
             let one = self.one();
             self.connect(cmp.target, one);
@@ -346,7 +357,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF> {
         let diff = self.add_virtual_nonnative_target::<FF>();
         let overflow = self.add_virtual_bool_target_unsafe();
@@ -368,7 +379,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         let diff_plus_b_reduced = self.sub_biguint(&diff_plus_b, &mod_times_overflow);
         self.connect_biguint(&a.value, &diff_plus_b_reduced);
 
-        if range_check{
+        if range_check {
             let cmp = self.cmp_biguint(&diff.value, &modulus);
             let one = self.one();
             self.connect(cmp.target, one);
@@ -376,12 +387,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         diff
     }
 
-
     fn mul_nonnative<FF: PrimeField>(
         &mut self,
         x: &NonNativeTarget<FF>,
         y: &NonNativeTarget<FF>,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF> {
         let mul_gate = MulNonnativeGate::<F, D, FF>::new_from_config(&self.config);
         let constants = vec![];
@@ -390,10 +400,10 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         let y_wire_inds: Vec<_> = (0..n).map(|i| mul_gate.y(i)).collect();
         let q_wire_inds: Vec<_> = (0..n).map(|i| mul_gate.q(i)).collect();
         let r_wire_inds: Vec<_> = (0..n).map(|i| mul_gate.r(i)).collect();
-        let check_sum_wire_inds: Vec<_> = (0..2* n - 1).map(|i| mul_gate.check_sum(i)).collect();
+        let check_sum_wire_inds: Vec<_> = (0..2 * n - 1).map(|i| mul_gate.check_sum(i)).collect();
         let row = self.add_gate(mul_gate, constants);
-        
-        for i in 0..n{
+
+        for i in 0..n {
             let wire_x = Target::wire(row, x_wire_inds[i]);
             let wire_y = Target::wire(row, y_wire_inds[i]);
             if i < x.value.limbs.len() {
@@ -412,16 +422,16 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
                 self.connect(zero, wire_y);
             }
         }
-        let q: Vec<UXTarget<BITS>> = (0..n).map(|i| {
-            UXTarget(Target::wire(row, q_wire_inds[i]))
-        }).collect();
-        let r: Vec<_> = (0..n).map(|i| {
-            UXTarget(Target::wire(row, r_wire_inds[i]))
-        }).collect();
-        
-        let check_sum: Vec<_> = (0..2 * n - 1).map(|i| {
-            UXTarget::<BITS>(Target::wire(row, check_sum_wire_inds[i]))
-        }).collect();
+        let q: Vec<UXTarget<BITS>> = (0..n)
+            .map(|i| UXTarget(Target::wire(row, q_wire_inds[i])))
+            .collect();
+        let r: Vec<_> = (0..n)
+            .map(|i| UXTarget(Target::wire(row, r_wire_inds[i])))
+            .collect();
+
+        let check_sum: Vec<_> = (0..2 * n - 1)
+            .map(|i| UXTarget::<BITS>(Target::wire(row, check_sum_wire_inds[i])))
+            .collect();
 
         //check that q * m + r - x * m = 0
         let check_gate = CheckSumGate::<F, D>::new_from_config(&self.config);
@@ -429,18 +439,18 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         let row = self.add_gate(check_gate, constants);
         let tmp_gate = CheckSumGate::<F, D>::new_from_config(&self.config);
         let n = tmp_gate.num_limbs;
-        for i in 0..(2 * n - 1){
+        for i in 0..(2 * n - 1) {
             let wire_a = Target::wire(row, tmp_gate.a(i));
             self.connect(check_sum[i].0, wire_a);
         }
 
-        let b: Vec<_> = (0..2 * n - 2).map(|i| {
-            UXTarget(Target::wire(row, tmp_gate.b(i)))
-        }).collect();
+        let b: Vec<_> = (0..2 * n - 2)
+            .map(|i| UXTarget(Target::wire(row, tmp_gate.b(i))))
+            .collect();
 
         // range checks
 
-        const CARRY_OVER_BASE : usize = 34;
+        const CARRY_OVER_BASE: usize = 34;
         range_check_ux_circuit::<F, D, BITS>(self, x.value.limbs.clone());
         range_check_ux_circuit::<F, D, BITS>(self, y.value.limbs.clone());
         range_check_ux_circuit::<F, D, BITS>(self, r.clone());
@@ -448,18 +458,15 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         range_check_ux_circuit::<F, D, BITS>(self, r.clone());
         range_check_ux_circuit::<F, D, CARRY_OVER_BASE>(self, b[0..8].to_vec());
         range_check_ux_circuit::<F, D, CARRY_OVER_BASE>(self, b[8..].to_vec());
-        
-        let r_bigint = BigUintTarget{
-            limbs: r
-        };
-        let res = self.biguint_to_nonnative(&r_bigint, range_check);
-        res
+
+        let r_bigint = BigUintTarget { limbs: r };
+        self.biguint_to_nonnative(&r_bigint, range_check)
     }
 
     fn mul_many_nonnative<FF: PrimeField>(
         &mut self,
         to_mul: &[NonNativeTarget<FF>],
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF> {
         if to_mul.len() == 1 {
             return to_mul[0].clone();
@@ -467,28 +474,36 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
 
         // Only range check the last result
         let mut range_check_curr = range_check;
-        if to_mul.len() > 2{
+        if to_mul.len() > 2 {
             range_check_curr = false;
         }
         let mut accumulator = self.mul_nonnative(&to_mul[0], &to_mul[1], range_check_curr);
-        for i in 2..to_mul.len(){
+        for i in 2..to_mul.len() {
             let t = &to_mul[i];
-            if i + 1 == to_mul.len(){
+            if i + 1 == to_mul.len() {
                 range_check_curr = range_check;
             }
-            accumulator = self.mul_nonnative(&accumulator, &t, range_check_curr);
-        }   
+            accumulator = self.mul_nonnative(&accumulator, t, range_check_curr);
+        }
         accumulator
     }
 
-    fn neg_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>, range_check: bool) -> NonNativeTarget<FF> {
+    fn neg_nonnative<FF: PrimeField>(
+        &mut self,
+        x: &NonNativeTarget<FF>,
+        range_check: bool,
+    ) -> NonNativeTarget<FF> {
         let zero_target = self.constant_biguint(&BigUint::zero());
         let zero_ff = self.biguint_to_nonnative(&zero_target, false);
 
         self.sub_nonnative(&zero_ff, x, range_check)
     }
 
-    fn inv_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>, range_check: bool) -> NonNativeTarget<FF> {
+    fn inv_nonnative<FF: PrimeField>(
+        &mut self,
+        x: &NonNativeTarget<FF>,
+        range_check: bool,
+    ) -> NonNativeTarget<FF> {
         let num_limbs = x.value.num_limbs();
         let inv_biguint = self.add_virtual_biguint_target(num_limbs);
         let div = self.add_virtual_biguint_target(num_limbs);
@@ -508,7 +523,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         let expected_product = self.add_biguint(&mod_times_div, &one);
         self.connect_biguint(&product, &expected_product);
 
-        if range_check{
+        if range_check {
             let cmp = self.cmp_biguint(&inv_biguint, &modulus);
             let one = self.one();
             self.connect(cmp.target, one);
@@ -570,7 +585,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         x: &NonNativeTarget<FF>,
         b: BoolTarget,
-        range_check: bool
+        range_check: bool,
     ) -> NonNativeTarget<FF> {
         let not_b = self.not(b);
         let neg = self.neg_nonnative(x, false);
@@ -624,10 +639,9 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         } else {
             (false, sum_biguint)
         };
-        
+
         out_buffer.set_biguint_target(&self.sum.value, &sum_reduced)?;
-        let tmp = out_buffer.set_bool_target(self.overflow, overflow);
-        tmp
+        out_buffer.set_bool_target(self.overflow, overflow)
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -702,15 +716,15 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
 
         let modulus = FF::order();
         let (overflow_biguint, sum_reduced) = sum_biguint.div_rem(&modulus);
+
         let overflow;
-        if overflow_biguint.is_zero(){
+        if overflow_biguint.is_zero() {
             overflow = 0;
-        } else{
-           overflow = overflow_biguint.to_u64_digits()[0] as u32;
+        } else {
+            overflow = overflow_biguint.to_u64_digits()[0] as u32;
         }
         out_buffer.set_biguint_target(&self.sum.value, &sum_reduced)?;
-        let tmp = out_buffer.set_ux_target(self.overflow, overflow);
-        tmp
+        out_buffer.set_ux_target(self.overflow, overflow)
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -792,9 +806,7 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             (modulus + a_biguint - b_biguint, true)
         };
         out_buffer.set_biguint_target(&self.diff.value, &diff_biguint)?;
-        let tmp = out_buffer.set_bool_target(self.overflow, overflow);
-        tmp
-
+        out_buffer.set_bool_target(self.overflow, overflow)
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -822,7 +834,6 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         })
     }
 }
-
 
 #[derive(Debug)]
 struct NonNativeInverseGenerator<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> {
@@ -857,9 +868,7 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
         let modulus = FF::order();
         let (div, _rem) = prod.div_rem(&modulus);
         out_buffer.set_biguint_target(&self.div, &div)?;
-        let tmp =  out_buffer.set_biguint_target(&self.inv, &inv_biguint);
-        tmp
-       
+        out_buffer.set_biguint_target(&self.inv, &inv_biguint)
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -1004,18 +1013,18 @@ mod tests {
         let x_ff = FF::rand();
         let y_ff = FF::rand();
         let mut product_ff = x_ff * y_ff;
-        
+
         let config = CircuitConfig::standard_ecc_config();
         let pw = PartialWitness::new();
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         let x = builder.constant_nonnative(x_ff);
         let y = builder.constant_nonnative(y_ff);
-        
+
         let mut product = builder.mul_nonnative(&x, &y, true);
         let mut product_expected = builder.constant_nonnative(product_ff);
 
-        for _ in 0..n{
+        for _ in 0..n {
             let z_ff = FF::rand();
             let z = builder.constant_nonnative(z_ff);
             product_ff = product_ff * z_ff;

@@ -17,37 +17,35 @@ use plonky2::plonk::circuit_builder::CircuitBuilder;
 use plonky2_ux::{
     gadgets::{
         arithmetic_ux::{CircuitBuilderUX, UXTarget},
-        multiple_comparison::list_le_ux_circuit
+        multiple_comparison::list_le_ux_circuit,
     },
-    witness::{GeneratedValuesUX, WitnessUX}
+    witness::{GeneratedValuesUX, WitnessUX},
 };
-
-
 
 // from base 2^from to base 2^to
 // requires from, to <= 32
-pub fn convert_base(x: &Vec<u32>, from: usize, to:usize) -> Vec<u32>{
+pub fn convert_base(x: &Vec<u32>, from: usize, to: usize) -> Vec<u32> {
     let mut res: Vec<u32> = Vec::new();
     let mut rem: u64 = 0;
     let mut offset = 0;
-    let mask = (1u64<<to) - 1;
+    let mask = (1u64 << to) - 1;
 
     for &i in x {
         rem += (i as u64) << offset;
         offset += from;
-        while offset >= to{
+        while offset >= to {
             let curr: u64 = rem & mask;
             res.push(curr.try_into().expect("Value doesn't fit in u32"));
             rem >>= to;
             offset -= to;
         }
     }
-    if rem != 0{
+    if rem != 0 {
         res.push(rem.try_into().expect("Value doesn't fit in u32"));
     }
-    assert!(mask < (1u64<<to));
-    for i in &res{
-        assert!((*i as u64) < (1u64<<to));
+    assert!(mask < (1u64 << to));
+    for i in &res {
+        assert!((*i as u64) < (1u64 << to));
     }
     res
 }
@@ -57,7 +55,7 @@ pub struct BigUintTarget<const BITS: usize> {
     pub limbs: Vec<UXTarget<BITS>>,
 }
 
-impl <const BITS: usize> BigUintTarget<BITS> {
+impl<const BITS: usize> BigUintTarget<BITS> {
     pub fn num_limbs(&self) -> usize {
         self.limbs.len()
     }
@@ -82,7 +80,11 @@ pub trait CircuitBuilderBiguint<F: RichField + Extendable<D>, const D: usize> {
 
     fn zero_biguint<const BITS: usize>(&mut self) -> BigUintTarget<BITS>;
 
-    fn connect_biguint<const BITS: usize>(&mut self, lhs: &BigUintTarget<BITS>, rhs: &BigUintTarget<BITS>);
+    fn connect_biguint<const BITS: usize>(
+        &mut self,
+        lhs: &BigUintTarget<BITS>,
+        rhs: &BigUintTarget<BITS>,
+    );
 
     fn pad_biguints<const BITS: usize>(
         &mut self,
@@ -90,21 +92,45 @@ pub trait CircuitBuilderBiguint<F: RichField + Extendable<D>, const D: usize> {
         b: &BigUintTarget<BITS>,
     ) -> (BigUintTarget<BITS>, BigUintTarget<BITS>);
 
-    fn cmp_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BoolTarget;
+    fn cmp_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BoolTarget;
 
-    fn add_virtual_biguint_target<const BITS: usize>(&mut self, num_limbs: usize) -> BigUintTarget<BITS>;
+    fn add_virtual_biguint_target<const BITS: usize>(
+        &mut self,
+        num_limbs: usize,
+    ) -> BigUintTarget<BITS>;
 
     /// Add two `BigUintTarget`s.
-    fn add_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS>;
+    fn add_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS>;
 
     /// Subtract two `BigUintTarget`s. We assume that the first is larger than the second.
-    fn sub_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS>;
+    fn sub_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS>;
 
-    fn mul_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS>;
+    fn mul_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS>;
 
-    fn square_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>) -> BigUintTarget<BITS>;
+    fn square_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>)
+        -> BigUintTarget<BITS>;
 
-    fn mul_biguint_by_bool<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: BoolTarget) -> BigUintTarget<BITS>;
+    fn mul_biguint_by_bool<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: BoolTarget,
+    ) -> BigUintTarget<BITS>;
 
     /// Returns x * y + z. This is no more efficient than mul-then-add; it's purely for convenience (only need to call one CircuitBuilder function).
     fn mul_add_biguint<const BITS: usize>(
@@ -120,9 +146,17 @@ pub trait CircuitBuilderBiguint<F: RichField + Extendable<D>, const D: usize> {
         b: &BigUintTarget<BITS>,
     ) -> (BigUintTarget<BITS>, BigUintTarget<BITS>);
 
-    fn div_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS>;
+    fn div_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS>;
 
-    fn rem_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS>;
+    fn rem_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS>;
 }
 
 impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
@@ -130,18 +164,25 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
 {
     fn constant_biguint<const BITS: usize>(&mut self, value: &BigUint) -> BigUintTarget<BITS> {
         let limb_values = convert_base(&value.to_u32_digits(), 32, BITS);
-        let limbs = limb_values.iter().map(|&l| {
-            assert!(l < (1<<BITS));
-            self.constant_ux(l)
-        }).collect();
-        BigUintTarget{ limbs }
+        let limbs = limb_values
+            .iter()
+            .map(|&l| {
+                assert!(l < (1 << BITS));
+                self.constant_ux(l)
+            })
+            .collect();
+        BigUintTarget { limbs }
     }
 
     fn zero_biguint<const BITS: usize>(&mut self) -> BigUintTarget<BITS> {
         self.constant_biguint(&BigUint::zero())
     }
 
-    fn connect_biguint<const BITS: usize>(&mut self, lhs: &BigUintTarget<BITS>, rhs: &BigUintTarget<BITS>) {
+    fn connect_biguint<const BITS: usize>(
+        &mut self,
+        lhs: &BigUintTarget<BITS>,
+        rhs: &BigUintTarget<BITS>,
+    ) {
         let min_limbs = lhs.num_limbs().min(rhs.num_limbs());
         for i in 0..min_limbs {
             self.connect_ux(lhs.get_limb(i), rhs.get_limb(i));
@@ -177,19 +218,30 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
         }
     }
 
-    fn cmp_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BoolTarget {
+    fn cmp_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BoolTarget {
         let (a, b) = self.pad_biguints(a, b);
 
         list_le_ux_circuit(self, a.limbs, b.limbs)
     }
 
-    fn add_virtual_biguint_target<const BITS: usize>(&mut self, num_limbs: usize) -> BigUintTarget<BITS> {
+    fn add_virtual_biguint_target<const BITS: usize>(
+        &mut self,
+        num_limbs: usize,
+    ) -> BigUintTarget<BITS> {
         let limbs = self.add_virtual_ux_targets(num_limbs);
 
         BigUintTarget { limbs }
     }
 
-    fn add_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS> {
+    fn add_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS> {
         let num_limbs = a.num_limbs().max(b.num_limbs());
 
         let mut combined_limbs = vec![];
@@ -217,7 +269,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
         }
     }
 
-    fn sub_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS> {
+    fn sub_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS> {
         let (a, b) = self.pad_biguints(a, b);
         let num_limbs = a.limbs.len();
 
@@ -236,7 +292,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
         }
     }
 
-    fn mul_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS> {
+    fn mul_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS> {
         let total_limbs = a.limbs.len() + b.limbs.len();
 
         let mut to_add = vec![vec![]; total_limbs];
@@ -262,7 +322,10 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
         }
     }
 
-    fn square_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>) -> BigUintTarget<BITS> {
+    fn square_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS> {
         let n = a.limbs.len();
         let total_limbs = n * 2;
 
@@ -273,7 +336,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
                 to_add[i + j].push(product);
                 to_add[i + j + 1].push(carry);
                 //do the other way round
-                if j != i{
+                if j != i {
                     to_add[i + j].push(product);
                     to_add[i + j + 1].push(carry);
                 }
@@ -294,7 +357,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
         }
     }
 
-    fn mul_biguint_by_bool<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: BoolTarget) -> BigUintTarget<BITS> {
+    fn mul_biguint_by_bool<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: BoolTarget,
+    ) -> BigUintTarget<BITS> {
         let t = b.target;
 
         BigUintTarget {
@@ -349,12 +416,20 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderBiguint<F, D>
         (div, rem)
     }
 
-    fn div_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS> {
+    fn div_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS> {
         let (div, _rem) = self.div_rem_biguint(a, b);
         div
     }
 
-    fn rem_biguint<const BITS: usize>(&mut self, a: &BigUintTarget<BITS>, b: &BigUintTarget<BITS>) -> BigUintTarget<BITS> {
+    fn rem_biguint<const BITS: usize>(
+        &mut self,
+        a: &BigUintTarget<BITS>,
+        b: &BigUintTarget<BITS>,
+    ) -> BigUintTarget<BITS> {
         let (_div, rem) = self.div_rem_biguint(a, b);
         rem
     }
@@ -440,7 +515,6 @@ impl<F: RichField + Extendable<D>, const D: usize, const BITS: usize> SimpleGene
         let (div, rem) = a.div_rem(&b);
         out_buffer.set_biguint_target(&self.div, &div)?;
         out_buffer.set_biguint_target(&self.rem, &rem)
-
     }
 
     fn serialize(&self, dst: &mut Vec<u8>, _common_data: &CommonCircuitData<F, D>) -> IoResult<()> {
@@ -484,8 +558,8 @@ mod tests {
     use rand::rngs::OsRng;
     use rand::Rng;
 
-    use crate::gadgets::biguint::{CircuitBuilderBiguint, WitnessBigUint};
     use super::*;
+    use crate::gadgets::biguint::{CircuitBuilderBiguint, WitnessBigUint};
 
     const BITS: usize = 29;
     #[test]
@@ -503,10 +577,14 @@ mod tests {
         let mut pw = PartialWitness::new();
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
-        let x: BigUintTarget<BITS> = builder.add_virtual_biguint_target(convert_base(&x_value.to_u32_digits(), 32, BITS).len());
-        let y = builder.add_virtual_biguint_target(convert_base(&y_value.to_u32_digits(), 32, BITS).len());
+        let x: BigUintTarget<BITS> = builder
+            .add_virtual_biguint_target(convert_base(&x_value.to_u32_digits(), 32, BITS).len());
+        let y = builder
+            .add_virtual_biguint_target(convert_base(&y_value.to_u32_digits(), 32, BITS).len());
         let z = builder.add_biguint(&x, &y);
-        let expected_z = builder.add_virtual_biguint_target(convert_base(&expected_z_value.to_u32_digits(), 32, BITS).len());
+        let expected_z = builder.add_virtual_biguint_target(
+            convert_base(&expected_z_value.to_u32_digits(), 32, BITS).len(),
+        );
         builder.connect_biguint(&z, &expected_z);
 
         pw.set_biguint_target(&x, &x_value)?;
@@ -563,10 +641,14 @@ mod tests {
         let mut pw = PartialWitness::new();
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
-        let x: BigUintTarget<BITS> = builder.add_virtual_biguint_target(convert_base(&x_value.to_u32_digits(), 32, BITS).len());
-        let y = builder.add_virtual_biguint_target(convert_base(&y_value.to_u32_digits(), 32, BITS).len());
+        let x: BigUintTarget<BITS> = builder
+            .add_virtual_biguint_target(convert_base(&x_value.to_u32_digits(), 32, BITS).len());
+        let y = builder
+            .add_virtual_biguint_target(convert_base(&y_value.to_u32_digits(), 32, BITS).len());
         let z = builder.mul_biguint(&x, &y);
-        let expected_z = builder.add_virtual_biguint_target(convert_base(&expected_z_value.to_u32_digits(), 32, BITS).len());
+        let expected_z = builder.add_virtual_biguint_target(
+            convert_base(&expected_z_value.to_u32_digits(), 32, BITS).len(),
+        );
         builder.connect_biguint(&z, &expected_z);
 
         pw.set_biguint_target(&x, &x_value)?;
