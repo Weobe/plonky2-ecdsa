@@ -37,7 +37,7 @@ pub trait CircuitBuilderCurve<F: RichField + Extendable<D>, const D: usize> {
 
     fn curve_assert_valid<C: Curve>(&mut self, p: &AffinePointTarget<C>);
 
-    fn curve_neg<C: Curve>(&mut self, p: &AffinePointTarget<C>) -> AffinePointTarget<C>;
+    fn curve_neg<C: Curve>(&mut self, p: &AffinePointTarget<C>, range_check: bool) -> AffinePointTarget<C>;
 
     fn curve_conditional_neg<C: Curve>(
         &mut self,
@@ -45,12 +45,13 @@ pub trait CircuitBuilderCurve<F: RichField + Extendable<D>, const D: usize> {
         b: BoolTarget,
     ) -> AffinePointTarget<C>;
 
-    fn curve_double<C: Curve>(&mut self, p: &AffinePointTarget<C>) -> AffinePointTarget<C>;
+    fn curve_double<C: Curve>(&mut self, p: &AffinePointTarget<C>, range_check: bool) -> AffinePointTarget<C>;
 
     fn curve_repeated_double<C: Curve>(
         &mut self,
         p: &AffinePointTarget<C>,
         n: usize,
+        range_check: bool
     ) -> AffinePointTarget<C>;
 
     /// Add two points, which are assumed to be non-equal.
@@ -58,6 +59,7 @@ pub trait CircuitBuilderCurve<F: RichField + Extendable<D>, const D: usize> {
         &mut self,
         p1: &AffinePointTarget<C>,
         p2: &AffinePointTarget<C>,
+        range_check: bool
     ) -> AffinePointTarget<C>;
 
     fn curve_conditional_add<C: Curve>(
@@ -65,12 +67,14 @@ pub trait CircuitBuilderCurve<F: RichField + Extendable<D>, const D: usize> {
         p1: &AffinePointTarget<C>,
         p2: &AffinePointTarget<C>,
         b: BoolTarget,
+        range_check: bool
     ) -> AffinePointTarget<C>;
 
     fn curve_scalar_mul<C: Curve>(
         &mut self,
         p: &AffinePointTarget<C>,
         n: &NonNativeTarget<C::ScalarField>,
+        range_check: bool
     ) -> AffinePointTarget<C>;
 }
 
@@ -115,8 +119,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         self.connect_nonnative(&y_squared, &rhs);
     }
 
-    fn curve_neg<C: Curve>(&mut self, p: &AffinePointTarget<C>) -> AffinePointTarget<C> {
-        let neg_y = self.neg_nonnative(&p.y, true);
+    fn curve_neg<C: Curve>(&mut self, p: &AffinePointTarget<C>, range_check: bool) -> AffinePointTarget<C> {
+        let neg_y = self.neg_nonnative(&p.y, range_check);
         AffinePointTarget {
             x: p.x.clone(),
             y: neg_y,
@@ -134,7 +138,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         }
     }
 
-    fn curve_double<C: Curve>(&mut self, p: &AffinePointTarget<C>) -> AffinePointTarget<C> {
+    fn curve_double<C: Curve>(&mut self, p: &AffinePointTarget<C>, range_check: bool) -> AffinePointTarget<C> {
         let AffinePointTarget { x, y } = p;
         // It is safe to have range_check = false here because the output is fits in 9-limbs and there will be a range_check i
         let double_y = self.add_nonnative(y, y, false);
@@ -146,12 +150,12 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         let lambda_squared = self.mul_nonnative(&lambda, &lambda, false);
         let x_double = self.add_nonnative(x, x, false);
 
-        let x3 = self.sub_nonnative(&lambda_squared, &x_double, true);
+        let x3 = self.sub_nonnative(&lambda_squared, &x_double, range_check);
 
         let x_diff = self.sub_nonnative(x, &x3, false);
         let lambda_x_diff = self.mul_nonnative(&lambda, &x_diff, false);
 
-        let y3 = self.sub_nonnative(&lambda_x_diff, y, true);
+        let y3 = self.sub_nonnative(&lambda_x_diff, y, range_check);
 
         AffinePointTarget { x: x3, y: y3 }
     }
@@ -160,13 +164,14 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         &mut self,
         p: &AffinePointTarget<C>,
         n: usize,
+        range_check: bool
     ) -> AffinePointTarget<C> {
         let mut result = p.clone();
 
-        for _ in 0..n {
-            result = self.curve_double(&result);
+        for _ in 0..n - 1 {
+            result = self.curve_double(&result, false);
         }
-
+        result = self.curve_double(&result, range_check);
         result
     }
 
@@ -174,6 +179,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         &mut self,
         p1: &AffinePointTarget<C>,
         p2: &AffinePointTarget<C>,
+        range_check: bool
     ) -> AffinePointTarget<C> {
         let AffinePointTarget { x: x1, y: y1 } = p1;
         let AffinePointTarget { x: x2, y: y2 } = p2;
@@ -184,10 +190,10 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         let s = self.mul_nonnative(&u, &v_inv, false);
         let s_squared = self.mul_nonnative(&s, &s, false);
         let x_sum = self.add_nonnative(x2, x1, false);
-        let x3 = self.sub_nonnative(&s_squared, &x_sum, true);
+        let x3 = self.sub_nonnative(&s_squared, &x_sum, range_check);
         let x_diff = self.sub_nonnative(x1, &x3, false);
         let prod = self.mul_nonnative(&s, &x_diff, false);
-        let y3 = self.sub_nonnative(&prod, y1, true);
+        let y3 = self.sub_nonnative(&prod, y1, range_check);
 
         AffinePointTarget { x: x3, y: y3 }
     }
@@ -197,16 +203,17 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         p1: &AffinePointTarget<C>,
         p2: &AffinePointTarget<C>,
         b: BoolTarget,
+        range_check: bool
     ) -> AffinePointTarget<C> {
         let not_b = self.not(b);
-        let sum = self.curve_add(p1, p2);
+        let sum = self.curve_add(p1, p2, false);
         let x_if_true = self.mul_nonnative_by_bool(&sum.x, b, false);
         let y_if_true = self.mul_nonnative_by_bool(&sum.y, b, false);
         let x_if_false = self.mul_nonnative_by_bool(&p1.x, not_b, false);
         let y_if_false = self.mul_nonnative_by_bool(&p1.y, not_b, false);
 
-        let x = self.add_nonnative(&x_if_true, &x_if_false, true);
-        let y = self.add_nonnative(&y_if_true, &y_if_false, true);
+        let x = self.add_nonnative(&x_if_true, &x_if_false, range_check);
+        let y = self.add_nonnative(&y_if_true, &y_if_false, range_check);
 
         AffinePointTarget { x, y }
     }
@@ -215,6 +222,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         &mut self,
         p: &AffinePointTarget<C>,
         n: &NonNativeTarget<C::ScalarField>,
+        range_check: bool
     ) -> AffinePointTarget<C> {
         let bits = self.split_nonnative_to_bits(n);
 
@@ -230,24 +238,25 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         for &bit in bits.iter() {
             let not_bit = self.not(bit);
 
-            let result_plus_2_i_p = self.curve_add(&result, &two_i_times_p);
+            let result_plus_2_i_p = self.curve_add(&result, &two_i_times_p, false);
 
             let new_x_if_bit = self.mul_nonnative_by_bool(&result_plus_2_i_p.x, bit, false);
             let new_x_if_not_bit = self.mul_nonnative_by_bool(&result.x, not_bit, false);
             let new_y_if_bit = self.mul_nonnative_by_bool(&result_plus_2_i_p.y, bit, false);
             let new_y_if_not_bit = self.mul_nonnative_by_bool(&result.y, not_bit, false);
 
-            let new_x = self.add_nonnative(&new_x_if_bit, &new_x_if_not_bit, true);
-            let new_y = self.add_nonnative(&new_y_if_bit, &new_y_if_not_bit, true);
+            let new_x = self.add_nonnative(&new_x_if_bit, &new_x_if_not_bit, false);
+            let new_y = self.add_nonnative(&new_y_if_bit, &new_y_if_not_bit, false);
 
             result = AffinePointTarget { x: new_x, y: new_y };
 
-            two_i_times_p = self.curve_double(&two_i_times_p);
+            two_i_times_p = self.curve_double(&two_i_times_p, false);
         }
 
         // Subtract off result's intial value of `rando`.
-        let neg_r = self.curve_neg(&randot);
-        result = self.curve_add(&result, &neg_r);
+        let neg_r = self.curve_neg(&randot, false);
+        result = self.curve_add(&result, &neg_r, range_check);
+        
 
         result
     }
@@ -284,7 +293,7 @@ mod tests {
 
         let g = Secp256K1::GENERATOR_AFFINE;
         let g_target = builder.constant_affine_point(g);
-        let neg_g_target = builder.curve_neg(&g_target);
+        let neg_g_target = builder.curve_neg(&g_target, true);
 
         builder.curve_assert_valid(&g_target);
         builder.curve_assert_valid(&neg_g_target);
@@ -336,7 +345,7 @@ mod tests {
 
         let g = Secp256K1::GENERATOR_AFFINE;
         let g_target = builder.constant_affine_point(g);
-        let neg_g_target = builder.curve_neg(&g_target);
+        let neg_g_target = builder.curve_neg(&g_target, true);
 
         let double_g = g.double();
         let double_g_expected = builder.constant_affine_point(double_g);
@@ -346,8 +355,8 @@ mod tests {
         let double_neg_g_expected = builder.constant_affine_point(double_neg_g);
         builder.curve_assert_valid(&double_neg_g_expected);
 
-        let double_g_actual = builder.curve_double(&g_target);
-        let double_neg_g_actual = builder.curve_double(&neg_g_target);
+        let double_g_actual = builder.curve_double(&g_target, true);
+        let double_neg_g_actual = builder.curve_double(&neg_g_target, true);
         builder.curve_assert_valid(&double_g_actual);
         builder.curve_assert_valid(&double_neg_g_actual);
 
@@ -378,8 +387,8 @@ mod tests {
         builder.curve_assert_valid(&g_plus_2g_expected);
 
         let g_target = builder.constant_affine_point(g);
-        let double_g_target = builder.curve_double(&g_target);
-        let g_plus_2g_actual = builder.curve_add(&g_target, &double_g_target);
+        let double_g_target = builder.curve_double(&g_target, false);
+        let g_plus_2g_actual = builder.curve_add(&g_target, &double_g_target, true);
         builder.curve_assert_valid(&g_plus_2g_actual);
 
         builder.connect_affine_point(&g_plus_2g_expected, &g_plus_2g_actual);
@@ -407,11 +416,11 @@ mod tests {
         let g_plus_2g_expected = builder.constant_affine_point(g_plus_2g);
 
         let g_expected = builder.constant_affine_point(g);
-        let double_g_target = builder.curve_double(&g_expected);
+        let double_g_target = builder.curve_double(&g_expected,false);
         let t = builder._true();
         let f = builder._false();
-        let g_plus_2g_actual = builder.curve_conditional_add(&g_expected, &double_g_target, t);
-        let g_actual = builder.curve_conditional_add(&g_expected, &double_g_target, f);
+        let g_plus_2g_actual = builder.curve_conditional_add(&g_expected, &double_g_target, t, true);
+        let g_actual = builder.curve_conditional_add(&g_expected, &double_g_target, f, true);
 
         builder.connect_affine_point(&g_plus_2g_expected, &g_plus_2g_actual);
         builder.connect_affine_point(&g_expected, &g_actual);
@@ -443,7 +452,7 @@ mod tests {
 
         let g_target = builder.constant_affine_point(g);
         let neg_five_target = builder.constant_nonnative(neg_five);
-        let neg_five_g_actual = builder.curve_scalar_mul(&g_target, &neg_five_target);
+        let neg_five_g_actual = builder.curve_scalar_mul(&g_target, &neg_five_target, true);
         builder.curve_assert_valid(&neg_five_g_actual);
 
         builder.connect_affine_point(&neg_five_g_expected, &neg_five_g_actual);
@@ -470,8 +479,8 @@ mod tests {
         let randot = builder.constant_affine_point(rando);
 
         let two_target = builder.constant_nonnative(Secp256K1Scalar::TWO);
-        let randot_doubled = builder.curve_double(&randot);
-        let randot_times_two = builder.curve_scalar_mul(&randot, &two_target);
+        let randot_doubled = builder.curve_double(&randot, false);
+        let randot_times_two = builder.curve_scalar_mul(&randot, &two_target, true);
         builder.connect_affine_point(&randot_doubled, &randot_times_two);
 
         let data = builder.build::<C>();

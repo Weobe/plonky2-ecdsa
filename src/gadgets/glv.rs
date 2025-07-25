@@ -2,9 +2,9 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use anyhow::Result;
 use core::marker::PhantomData;
+use num::integer::div_ceil;
 use plonky2::plonk::circuit_data::CommonCircuitData;
 use plonky2::util::serialization::{Buffer, IoResult, Read, Write};
-use num::integer::div_ceil;
 
 use plonky2::field::extension::Extendable;
 use plonky2::field::secp256k1_base::Secp256K1Base;

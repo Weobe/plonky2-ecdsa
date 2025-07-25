@@ -58,11 +58,11 @@ pub fn fixed_base_curve_mul_circuit<C: Curve, F: RichField + Extendable<D>, cons
         let should_add = builder.not(is_zero);
         // `r = s_i * P_i`
         let r = builder.random_access_curve_points(limb, muls_point);
-        result = builder.curve_conditional_add(&result, &r, should_add);
+        result = builder.curve_conditional_add(&result, &r, should_add, false);
     }
 
     let to_add = builder.constant_affine_point(-rando);
-    builder.curve_add(&result, &to_add)
+    builder.curve_add(&result, &to_add, true)
 }
 
 #[cfg(test)]

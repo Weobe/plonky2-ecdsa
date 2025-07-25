@@ -43,6 +43,7 @@ pub trait CircuitBuilderWindowedMul<F: RichField + Extendable<D>, const D: usize
         &mut self,
         p: &AffinePointTarget<C>,
         n: &NonNativeTarget<C::ScalarField>,
+        range_check: bool
     ) -> AffinePointTarget<C>;
 }
 
@@ -62,10 +63,10 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
 
         let mut multiples = vec![self.constant_affine_point(g)];
         for i in 1..1 << WINDOW_SIZE {
-            multiples.push(self.curve_add(p, &multiples[i - 1]));
+            multiples.push(self.curve_add(p, &multiples[i - 1], true));
         }
         for i in 1..1 << WINDOW_SIZE {
-            multiples[i] = self.curve_add(&neg, &multiples[i]);
+            multiples[i] = self.curve_add(&neg, &multiples[i], true);
         }
         multiples
     }
@@ -131,6 +132,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
         &mut self,
         p: &AffinePointTarget<C>,
         n: &NonNativeTarget<C::ScalarField>,
+        range_check: bool
     ) -> AffinePointTarget<C> {
         let windows = self.split_nonnative_to_4_bit_limbs(n);
 
@@ -154,18 +156,18 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
         let zero = self.zero();
         
         for i in (0..windows.len()).rev() {
-            result = self.curve_repeated_double(&result, WINDOW_SIZE);
+            result = self.curve_repeated_double(&result, WINDOW_SIZE, false);
             let window = windows[i];
 
             let to_add = self.random_access_curve_points(window, precomputation.clone());
             let is_zero = self.is_equal(window, zero);
             let should_add = self.not(is_zero);
-            result = self.curve_conditional_add(&result, &to_add, should_add);
+            result = self.curve_conditional_add(&result, &to_add, should_add, false);
         }
 
         let to_subtract = self.constant_affine_point(starting_point_multiplied.to_affine());
-        let to_add = self.curve_neg(&to_subtract);
-        result = self.curve_add(&result, &to_add);
+        let to_add = self.curve_neg(&to_subtract, false);
+        result = self.curve_add(&result, &to_add, range_check);
 
         result
     }
@@ -240,7 +242,7 @@ mod tests {
 
         let g_target = builder.constant_affine_point(g);
         let neg_five_target = builder.constant_nonnative(neg_five);
-        let neg_five_g_actual = builder.curve_scalar_mul_windowed(&g_target, &neg_five_target);
+        let neg_five_g_actual = builder.curve_scalar_mul_windowed(&g_target, &neg_five_target, true);
         builder.curve_assert_valid(&neg_five_g_actual);
 
         builder.connect_affine_point(&neg_five_g_expected, &neg_five_g_actual);

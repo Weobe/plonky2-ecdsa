@@ -15,7 +15,6 @@ use crate::gadgets::curve_windowed_mul::CircuitBuilderWindowedMul;
 use crate::gadgets::glv::CircuitBuilderGlv;
 use crate::gadgets::nonnative::{CircuitBuilderNonNative, NonNativeTarget};
 
-
 #[derive(Clone, Debug)]
 pub struct ECDSASecretKeyTarget<C: Curve>(pub NonNativeTarget<C::ScalarField>);
 
@@ -44,7 +43,7 @@ pub fn verify_secp256k1_message_circuit<F: RichField + Extendable<D>, const D: u
 
     let point1 = fixed_base_curve_mul_circuit(builder, Secp256K1::GENERATOR_AFFINE, &u1);
     let point2 = builder.glv_mul(&pk.0, &u2);
-    let point = builder.curve_add(&point1, &point2);
+    let point = builder.curve_add(&point1, &point2, true);
 
     let x = NonNativeTarget::<Secp256K1Scalar> {
         value: point.x.value,
@@ -68,8 +67,8 @@ pub fn verify_p256_message_circuit<F: RichField + Extendable<D>, const D: usize>
     let u2 = builder.mul_nonnative(&r, &c, true);
 
     let point1 = fixed_base_curve_mul_circuit(builder, P256::GENERATOR_AFFINE, &u1);
-    let point2 = builder.curve_scalar_mul_windowed(&pk.0, &u2);
-    let point = builder.curve_add(&point1, &point2);
+    let point2 = builder.curve_scalar_mul_windowed(&pk.0, &u2, true);
+    let point = builder.curve_add(&point1, &point2, true);
 
     let x = NonNativeTarget::<P256Scalar> {
         value: point.x.value,
@@ -80,14 +79,14 @@ pub fn verify_p256_message_circuit<F: RichField + Extendable<D>, const D: usize>
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::curve::curve_types::{Curve, CurveScalar};
+    use crate::curve::ecdsa::{sign_message, ECDSAPublicKey, ECDSASecretKey, ECDSASignature};
     use anyhow::Result;
     use plonky2::field::types::Sample;
     use plonky2::iop::witness::PartialWitness;
     use plonky2::plonk::circuit_data::CircuitConfig;
     use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
-    use crate::curve::curve_types::{Curve, CurveScalar};
-    use super::*;
-    use crate::curve::ecdsa::{sign_message, ECDSAPublicKey, ECDSASecretKey, ECDSASignature};
 
     fn test_ecdsa_circuit_with_config(config: CircuitConfig) -> Result<()> {
         const D: usize = 2;
@@ -171,7 +170,8 @@ mod tests {
         test_ecdsa_circuit_with_config(CircuitConfig::wide_ecc_config())
     }
 
-    #[test]    fn test_p256_ecdsa_circuit_narrow() -> Result<()> {
+    #[test]
+    fn test_p256_ecdsa_circuit_narrow() -> Result<()> {
         test_p256_ecdsa_circuit_with_config(CircuitConfig::standard_ecc_config())
     }
 

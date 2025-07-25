@@ -45,17 +45,17 @@ pub fn curve_msm_circuit<C: Curve, F: RichField + Extendable<D>, const D: usize>
     for i in 0..4 {
         precomputation[i] = cur_p.clone();
         precomputation[4 * i] = cur_q.clone();
-        cur_p = builder.curve_add(&cur_p, p);
-        cur_q = builder.curve_add(&cur_q, q);
+        cur_p = builder.curve_add(&cur_p, p, false);
+        cur_q = builder.curve_add(&cur_q, q, false);
     }
     for i in 1..4 {
-        precomputation[i] = builder.curve_add(&precomputation[i], &neg_rando);
-        precomputation[4 * i] = builder.curve_add(&precomputation[4 * i], &neg_rando);
+        precomputation[i] = builder.curve_add(&precomputation[i], &neg_rando, false);
+        precomputation[4 * i] = builder.curve_add(&precomputation[4 * i], &neg_rando, false);
     }
     for i in 1..4 {
         for j in 1..4 {
             precomputation[i + 4 * j] =
-                builder.curve_add(&precomputation[i], &precomputation[4 * j]);
+                builder.curve_add(&precomputation[i], &precomputation[4 * j], false);
         }
     }
 
@@ -64,16 +64,16 @@ pub fn curve_msm_circuit<C: Curve, F: RichField + Extendable<D>, const D: usize>
     let zero = builder.zero();
     let mut result = rando_t;
     for (limb_n, limb_m) in limbs_n.into_iter().zip(limbs_m).rev() {
-        result = builder.curve_repeated_double(&result, 2);
+        result = builder.curve_repeated_double(&result, 2, false);
         let index = builder.mul_add(four, limb_m, limb_n);
         let r = builder.random_access_curve_points(index, precomputation.clone());
         let is_zero = builder.is_equal(index, zero);
         let should_add = builder.not(is_zero);
-        result = builder.curve_conditional_add(&result, &r, should_add);
+        result = builder.curve_conditional_add(&result, &r, should_add, false);
     }
     let starting_point_multiplied = (0..2 * num_limbs).fold(rando, |acc, _| acc.double());
     let to_add = builder.constant_affine_point(-starting_point_multiplied);
-    result = builder.curve_add(&result, &to_add);
+    result = builder.curve_add(&result, &to_add, true);
 
     result
 }
