@@ -105,18 +105,18 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         let a = self.constant_nonnative(C::A);
         let b = self.constant_nonnative(C::B);
 
-        let y_squared = self.mul_nonnative(&p.y, &p.y);
-        let x_squared = self.mul_nonnative(&p.x, &p.x);
-        let x_cubed = self.mul_nonnative(&x_squared, &p.x);
-        let a_x = self.mul_nonnative(&a, &p.x);
-        let a_x_plus_b = self.add_nonnative(&a_x, &b);
-        let rhs = self.add_nonnative(&x_cubed, &a_x_plus_b);
+        let y_squared = self.mul_nonnative(&p.y, &p.y, true);
+        let x_squared = self.mul_nonnative(&p.x, &p.x, false);
+        let x_cubed = self.mul_nonnative(&x_squared, &p.x, false);
+        let a_x = self.mul_nonnative(&a, &p.x, false);
+        let a_x_plus_b = self.add_nonnative(&a_x, &b, false);
+        let rhs = self.add_nonnative(&x_cubed, &a_x_plus_b, true);
 
         self.connect_nonnative(&y_squared, &rhs);
     }
 
     fn curve_neg<C: Curve>(&mut self, p: &AffinePointTarget<C>) -> AffinePointTarget<C> {
-        let neg_y = self.neg_nonnative(&p.y);
+        let neg_y = self.neg_nonnative(&p.y, true);
         AffinePointTarget {
             x: p.x.clone(),
             y: neg_y,
@@ -130,27 +130,28 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
     ) -> AffinePointTarget<C> {
         AffinePointTarget {
             x: p.x.clone(),
-            y: self.nonnative_conditional_neg(&p.y, b),
+            y: self.nonnative_conditional_neg(&p.y, b, true),
         }
     }
 
     fn curve_double<C: Curve>(&mut self, p: &AffinePointTarget<C>) -> AffinePointTarget<C> {
         let AffinePointTarget { x, y } = p;
-        let double_y = self.add_nonnative_range_check_optional(y, y, false);
-        let inv_double_y = self.inv_nonnative(&double_y);
-        let x_squared = self.mul_nonnative(x, x);
+        // It is safe to have range_check = false here because the output is fits in 9-limbs and there will be a range_check i
+        let double_y = self.add_nonnative(y, y, false);
+        let inv_double_y = self.inv_nonnative(&double_y, false);
+        let x_squared = self.mul_nonnative(x, x, false);
         let a = self.constant_nonnative(C::A);
-        let triple_xx_a = self.add_many_nonnative_range_check_optional(&[x_squared.clone(), x_squared.clone(), x_squared, a], false);
-        let lambda = self.mul_nonnative(&triple_xx_a, &inv_double_y);
-        let lambda_squared = self.mul_nonnative(&lambda, &lambda);
-        let x_double = self.add_nonnative_range_check_optional(x, x, false);
+        let triple_xx_a = self.add_many_nonnative(&[x_squared.clone(), x_squared.clone(), x_squared, a], false);
+        let lambda = self.mul_nonnative(&triple_xx_a, &inv_double_y, false);
+        let lambda_squared = self.mul_nonnative(&lambda, &lambda, false);
+        let x_double = self.add_nonnative(x, x, false);
 
-        let x3 = self.sub_nonnative(&lambda_squared, &x_double);
+        let x3 = self.sub_nonnative(&lambda_squared, &x_double, true);
 
-        let x_diff = self.sub_nonnative(x, &x3);
-        let lambda_x_diff = self.mul_nonnative(&lambda, &x_diff);
+        let x_diff = self.sub_nonnative(x, &x3, false);
+        let lambda_x_diff = self.mul_nonnative(&lambda, &x_diff, false);
 
-        let y3 = self.sub_nonnative(&lambda_x_diff, y);
+        let y3 = self.sub_nonnative(&lambda_x_diff, y, true);
 
         AffinePointTarget { x: x3, y: y3 }
     }
@@ -177,16 +178,16 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
         let AffinePointTarget { x: x1, y: y1 } = p1;
         let AffinePointTarget { x: x2, y: y2 } = p2;
 
-        let u = self.sub_nonnative(y2, y1);
-        let v = self.sub_nonnative(x2, x1);
-        let v_inv = self.inv_nonnative(&v);
-        let s = self.mul_nonnative(&u, &v_inv);
-        let s_squared = self.mul_nonnative(&s, &s);
-        let x_sum = self.add_nonnative_range_check_optional(x2, x1, false);
-        let x3 = self.sub_nonnative(&s_squared, &x_sum);
-        let x_diff = self.sub_nonnative(x1, &x3);
-        let prod = self.mul_nonnative(&s, &x_diff);
-        let y3 = self.sub_nonnative(&prod, y1);
+        let u = self.sub_nonnative(y2, y1, false);
+        let v = self.sub_nonnative(x2, x1, false);
+        let v_inv = self.inv_nonnative(&v, false);
+        let s = self.mul_nonnative(&u, &v_inv, false);
+        let s_squared = self.mul_nonnative(&s, &s, false);
+        let x_sum = self.add_nonnative(x2, x1, false);
+        let x3 = self.sub_nonnative(&s_squared, &x_sum, true);
+        let x_diff = self.sub_nonnative(x1, &x3, false);
+        let prod = self.mul_nonnative(&s, &x_diff, false);
+        let y3 = self.sub_nonnative(&prod, y1, true);
 
         AffinePointTarget { x: x3, y: y3 }
     }
@@ -199,13 +200,13 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
     ) -> AffinePointTarget<C> {
         let not_b = self.not(b);
         let sum = self.curve_add(p1, p2);
-        let x_if_true = self.mul_nonnative_by_bool(&sum.x, b);
-        let y_if_true = self.mul_nonnative_by_bool(&sum.y, b);
-        let x_if_false = self.mul_nonnative_by_bool(&p1.x, not_b);
-        let y_if_false = self.mul_nonnative_by_bool(&p1.y, not_b);
+        let x_if_true = self.mul_nonnative_by_bool(&sum.x, b, false);
+        let y_if_true = self.mul_nonnative_by_bool(&sum.y, b, false);
+        let x_if_false = self.mul_nonnative_by_bool(&p1.x, not_b, false);
+        let y_if_false = self.mul_nonnative_by_bool(&p1.y, not_b, false);
 
-        let x = self.add_nonnative(&x_if_true, &x_if_false);
-        let y = self.add_nonnative(&y_if_true, &y_if_false);
+        let x = self.add_nonnative(&x_if_true, &x_if_false, true);
+        let y = self.add_nonnative(&y_if_true, &y_if_false, true);
 
         AffinePointTarget { x, y }
     }
@@ -231,13 +232,13 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderCurve<F, D>
 
             let result_plus_2_i_p = self.curve_add(&result, &two_i_times_p);
 
-            let new_x_if_bit = self.mul_nonnative_by_bool(&result_plus_2_i_p.x, bit);
-            let new_x_if_not_bit = self.mul_nonnative_by_bool(&result.x, not_bit);
-            let new_y_if_bit = self.mul_nonnative_by_bool(&result_plus_2_i_p.y, bit);
-            let new_y_if_not_bit = self.mul_nonnative_by_bool(&result.y, not_bit);
+            let new_x_if_bit = self.mul_nonnative_by_bool(&result_plus_2_i_p.x, bit, false);
+            let new_x_if_not_bit = self.mul_nonnative_by_bool(&result.x, not_bit, false);
+            let new_y_if_bit = self.mul_nonnative_by_bool(&result_plus_2_i_p.y, bit, false);
+            let new_y_if_not_bit = self.mul_nonnative_by_bool(&result.y, not_bit, false);
 
-            let new_x = self.add_nonnative(&new_x_if_bit, &new_x_if_not_bit);
-            let new_y = self.add_nonnative(&new_y_if_bit, &new_y_if_not_bit);
+            let new_x = self.add_nonnative(&new_x_if_bit, &new_x_if_not_bit, true);
+            let new_y = self.add_nonnative(&new_y_if_bit, &new_y_if_not_bit, true);
 
             result = AffinePointTarget { x: new_x, y: new_y };
 

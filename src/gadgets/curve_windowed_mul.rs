@@ -122,8 +122,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
         p1: &AffinePointTarget<C>,
         p2: &AffinePointTarget<C>,
     ) -> AffinePointTarget<C> {
-        let new_x = self.if_nonnative(b, &p1.x, &p2.x);
-        let new_y = self.if_nonnative(b, &p1.y, &p2.y);
+        let new_x = self.if_nonnative(b, &p1.x, &p2.x, true);
+        let new_y = self.if_nonnative(b, &p1.y, &p2.y, true);
         AffinePointTarget { x: new_x, y: new_y }
     }
 
@@ -153,7 +153,6 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderWindowedMul<F, 
         let precomputation = self.precompute_window(p);
         let zero = self.zero();
         
-        println!("{}", windows.len());
         for i in (0..windows.len()).rev() {
             result = self.curve_repeated_double(&result, WINDOW_SIZE);
             let window = windows[i];

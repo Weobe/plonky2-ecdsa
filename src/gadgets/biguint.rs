@@ -32,8 +32,7 @@ pub fn convert_base(x: &Vec<u32>, from: usize, to:usize) -> Vec<u32>{
     let mut offset = 0;
     let mask = (1u64<<to) - 1;
 
-    for i in x{
-        let i = i.clone();
+    for &i in x {
         rem += (i as u64) << offset;
         offset += from;
         while offset >= to{

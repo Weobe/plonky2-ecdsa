@@ -38,9 +38,9 @@ pub fn verify_secp256k1_message_circuit<F: RichField + Extendable<D>, const D: u
 
     builder.curve_assert_valid(&pk.0);
 
-    let c = builder.inv_nonnative(&s);
-    let u1 = builder.mul_nonnative(&msg, &c);
-    let u2 = builder.mul_nonnative(&r, &c);
+    let c = builder.inv_nonnative(&s, false);
+    let u1 = builder.mul_nonnative(&msg, &c, true);
+    let u2 = builder.mul_nonnative(&r, &c, true);
 
     let point1 = fixed_base_curve_mul_circuit(builder, Secp256K1::GENERATOR_AFFINE, &u1);
     let point2 = builder.glv_mul(&pk.0, &u2);
@@ -63,9 +63,9 @@ pub fn verify_p256_message_circuit<F: RichField + Extendable<D>, const D: usize>
 
     builder.curve_assert_valid(&pk.0);
 
-    let c = builder.inv_nonnative(&s);
-    let u1 = builder.mul_nonnative(&msg, &c);
-    let u2 = builder.mul_nonnative(&r, &c);
+    let c = builder.inv_nonnative(&s, false);
+    let u1 = builder.mul_nonnative(&msg, &c, true);
+    let u2 = builder.mul_nonnative(&r, &c, true);
 
     let point1 = fixed_base_curve_mul_circuit(builder, P256::GENERATOR_AFFINE, &u1);
     let point2 = builder.curve_scalar_mul_windowed(&pk.0, &u2);

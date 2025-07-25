@@ -55,7 +55,7 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         div_ceil(FF::BITS, BITS)
     }
 
-    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget<BITS>) -> NonNativeTarget<FF>;
+    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget<BITS>, range_check: bool) -> NonNativeTarget<FF>;
 
     fn nonnative_to_canonical_biguint<FF: Field>(
         &mut self,
@@ -80,13 +80,8 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         num_limbs: usize,
     ) -> NonNativeTarget<FF>;
 
-    fn add_nonnative<FF: PrimeField>(
-        &mut self,
-        a: &NonNativeTarget<FF>,
-        b: &NonNativeTarget<FF>,
-    ) -> NonNativeTarget<FF>;
 
-    fn add_nonnative_range_check_optional<FF: PrimeField>(
+    fn add_nonnative<FF: PrimeField>(
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
@@ -97,6 +92,7 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         &mut self,
         a: &NonNativeTarget<FF>,
         b: BoolTarget,
+        range_check: bool
     ) -> NonNativeTarget<FF>;
 
     fn if_nonnative<FF: PrimeField>(
@@ -104,14 +100,11 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         b: BoolTarget,
         x: &NonNativeTarget<FF>,
         y: &NonNativeTarget<FF>,
+        range_check: bool
     ) -> NonNativeTarget<FF>;
+
 
     fn add_many_nonnative<FF: PrimeField>(
-        &mut self,
-        to_add: &[NonNativeTarget<FF>],
-    ) -> NonNativeTarget<FF>;
-
-    fn add_many_nonnative_range_check_optional<FF: PrimeField>(
         &mut self,
         to_add: &[NonNativeTarget<FF>],
         range_check: bool
@@ -122,22 +115,25 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
+        range_check: bool
     ) -> NonNativeTarget<FF>;
 
     fn mul_nonnative<FF: PrimeField>(
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
+        range_check: bool
     ) -> NonNativeTarget<FF>;
 
     fn mul_many_nonnative<FF: PrimeField>(
         &mut self,
         to_mul: &[NonNativeTarget<FF>],
+        range_check: bool
     ) -> NonNativeTarget<FF>;
 
-    fn neg_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>) -> NonNativeTarget<FF>;
+    fn neg_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>, range_check: bool) -> NonNativeTarget<FF>;
 
-    fn inv_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>) -> NonNativeTarget<FF>;
+    fn inv_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>, range_check: bool) -> NonNativeTarget<FF>;
 
     /// Returns `x % |FF|` as a `NonNativeTarget`.
     fn reduce<FF: Field>(&mut self, x: &BigUintTarget<BITS>) -> NonNativeTarget<FF>;
@@ -153,8 +149,17 @@ pub trait CircuitBuilderNonNative<F: RichField + Extendable<D>, const D: usize> 
         &mut self,
         x: &NonNativeTarget<FF>,
         b: BoolTarget,
+        range_check: bool
     ) -> NonNativeTarget<FF>;
 }
+
+// For all the functions with range_check argument, range_check should only be false in cases where this is not the last nonnative operation to be performed
+// The soundness of the nonnative arithmetic holds even when doing operations with numbers bigger than the modulus as long as 
+// it is known that the output fits in 9 limbs of 29 bits each (i.e. <= 2^261)
+// 
+// However if this is the final nonnative operation, it should be checked that the output lies in [0, modulus - 1]
+// When in doubt, having range_check=true is the safest option, this option is available mainly to optimize gate count when it is a bottleneck
+
 
 impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
     for CircuitBuilder<F, D>
@@ -163,7 +168,14 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         div_ceil(FF::BITS, BITS)
     }
 
-    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget<BITS>) -> NonNativeTarget<FF> {
+    fn biguint_to_nonnative<FF: Field>(&mut self, x: &BigUintTarget<BITS>, range_check: bool) -> NonNativeTarget<FF> {
+        if range_check{
+            let modulus = self.constant_biguint(&FF::order());
+            let cmp = self.cmp_biguint(&x, &modulus);
+            let one = self.one();
+            self.connect(cmp.target, one);
+        }
+        assert!(x.limbs.len() <= div_ceil(256, BITS));
         NonNativeTarget {
             value: x.clone(),
             _phantom: PhantomData,
@@ -179,7 +191,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
 
     fn constant_nonnative<FF: PrimeField>(&mut self, x: FF) -> NonNativeTarget<FF> {
         let x_biguint = self.constant_biguint(&x.to_canonical_biguint());
-        self.biguint_to_nonnative(&x_biguint)
+        self.biguint_to_nonnative(&x_biguint, false)
     }
 
     fn zero_nonnative<FF: PrimeField>(&mut self) -> NonNativeTarget<FF> {
@@ -221,38 +233,6 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
-    ) -> NonNativeTarget<FF> {
-        let sum = self.add_virtual_nonnative_target::<FF>();
-        let overflow = self.add_virtual_bool_target_unsafe();
-
-        self.add_simple_generator(NonNativeAdditionGenerator::<F, D, FF> {
-            a: a.clone(),
-            b: b.clone(),
-            sum: sum.clone(),
-            overflow,
-            _phantom: PhantomData,
-        });
-
-        let sum_expected = self.add_biguint(&a.value, &b.value);
-
-        let modulus = self.constant_biguint(&FF::order());
-        let mod_times_overflow = self.mul_biguint_by_bool(&modulus, overflow);
-        let sum_actual = self.add_biguint(&sum.value, &mod_times_overflow);
-        self.connect_biguint(&sum_expected, &sum_actual);
-
-        // Range-check result.
-        // TODO: can potentially leave unreduced until necessary (e.g. when connecting values).
-        let cmp = self.cmp_biguint(&sum.value, &modulus);
-        let one = self.one();
-        self.connect(cmp.target, one);
-
-        sum
-    }
-
-    fn add_nonnative_range_check_optional<FF: PrimeField>(
-        &mut self,
-        a: &NonNativeTarget<FF>,
-        b: &NonNativeTarget<FF>,
         range_check: bool
     ) -> NonNativeTarget<FF> {
         let sum = self.add_virtual_nonnative_target::<FF>();
@@ -286,9 +266,17 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         a: &NonNativeTarget<FF>,
         b: BoolTarget,
+        range_check: bool
     ) -> NonNativeTarget<FF> {
+        let value = self.mul_biguint_by_bool(&a.value, b);
+        if range_check{
+            let modulus = self.constant_biguint(&FF::order());
+            let cmp = self.cmp_biguint(&value, &modulus);
+            let one = self.one();
+            self.connect(cmp.target, one);
+        }
         NonNativeTarget {
-            value: self.mul_biguint_by_bool(&a.value, b),
+            value: value,
             _phantom: PhantomData,
         }
     }
@@ -298,57 +286,17 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         b: BoolTarget,
         x: &NonNativeTarget<FF>,
         y: &NonNativeTarget<FF>,
+        range_check: bool
     ) -> NonNativeTarget<FF> {
         let not_b = self.not(b);
-        let maybe_x = self.mul_nonnative_by_bool(x, b);
-        let maybe_y = self.mul_nonnative_by_bool(y, not_b);
-        self.add_nonnative(&maybe_x, &maybe_y)
+        let maybe_x = self.mul_nonnative_by_bool(x, b, false);
+        let maybe_y = self.mul_nonnative_by_bool(y, not_b, false);
+        self.add_nonnative(&maybe_x, &maybe_y, range_check)
     }
 
+
+    
     fn add_many_nonnative<FF: PrimeField>(
-        &mut self,
-        to_add: &[NonNativeTarget<FF>],
-    ) -> NonNativeTarget<FF> {
-        if to_add.len() == 1 {
-            return to_add[0].clone();
-        }
-
-        let sum = self.add_virtual_nonnative_target::<FF>();
-        let overflow = self.add_virtual_ux_target();
-        let summands = to_add.to_vec();
-
-        self.add_simple_generator(NonNativeMultipleAddsGenerator::<F, D, FF> {
-            summands: summands.clone(),
-            sum: sum.clone(),
-            overflow,
-            _phantom: PhantomData,
-        });
-
-        range_check_ux_circuit::<F, D, BITS>(self, sum.value.limbs.clone());
-        range_check_ux_circuit::<F, D, BITS>(self, vec![overflow]);
-
-        let sum_expected = summands
-            .iter()
-            .fold(self.zero_biguint(), |a, b| self.add_biguint(&a, &b.value));
-
-        let modulus = self.constant_biguint(&FF::order());
-        let overflow_biguint = BigUintTarget {
-            limbs: vec![overflow],
-        };
-        let mod_times_overflow = self.mul_biguint(&modulus, &overflow_biguint);
-        let sum_actual = self.add_biguint(&sum.value, &mod_times_overflow);
-        self.connect_biguint(&sum_expected, &sum_actual);
-
-        // Range-check result.
-        // TODO: can potentially leave unreduced until necessary (e.g. when connecting values).
-        let cmp = self.cmp_biguint(&sum.value, &modulus);
-        let one = self.one();
-        self.connect(cmp.target, one);
-
-        sum
-    }
-
-    fn add_many_nonnative_range_check_optional<FF: PrimeField>(
         &mut self,
         to_add: &[NonNativeTarget<FF>],
         range_check: bool
@@ -398,6 +346,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         a: &NonNativeTarget<FF>,
         b: &NonNativeTarget<FF>,
+        range_check: bool
     ) -> NonNativeTarget<FF> {
         let diff = self.add_virtual_nonnative_target::<FF>();
         let overflow = self.add_virtual_bool_target_unsafe();
@@ -419,6 +368,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         let diff_plus_b_reduced = self.sub_biguint(&diff_plus_b, &mod_times_overflow);
         self.connect_biguint(&a.value, &diff_plus_b_reduced);
 
+        if range_check{
+            let cmp = self.cmp_biguint(&diff.value, &modulus);
+            let one = self.one();
+            self.connect(cmp.target, one);
+        }
         diff
     }
 
@@ -427,6 +381,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         x: &NonNativeTarget<FF>,
         y: &NonNativeTarget<FF>,
+        range_check: bool
     ) -> NonNativeTarget<FF> {
         let mul_gate = MulNonnativeGate::<F, D, FF>::new_from_config(&self.config);
         let constants = vec![];
@@ -497,33 +452,43 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         let r_bigint = BigUintTarget{
             limbs: r
         };
-        let res = self.biguint_to_nonnative(&r_bigint);
+        let res = self.biguint_to_nonnative(&r_bigint, range_check);
         res
     }
 
     fn mul_many_nonnative<FF: PrimeField>(
         &mut self,
         to_mul: &[NonNativeTarget<FF>],
+        range_check: bool
     ) -> NonNativeTarget<FF> {
         if to_mul.len() == 1 {
             return to_mul[0].clone();
         }
 
-        let mut accumulator = self.mul_nonnative(&to_mul[0], &to_mul[1]);
-        for t in to_mul.iter().skip(2) {
-            accumulator = self.mul_nonnative(&accumulator, t);
+        // Only range check the last result
+        let mut range_check_curr = range_check;
+        if to_mul.len() > 2{
+            range_check_curr = false;
         }
+        let mut accumulator = self.mul_nonnative(&to_mul[0], &to_mul[1], range_check_curr);
+        for i in 2..to_mul.len(){
+            let t = &to_mul[i];
+            if i + 1 == to_mul.len(){
+                range_check_curr = range_check;
+            }
+            accumulator = self.mul_nonnative(&accumulator, &t, range_check_curr);
+        }   
         accumulator
     }
 
-    fn neg_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>) -> NonNativeTarget<FF> {
+    fn neg_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>, range_check: bool) -> NonNativeTarget<FF> {
         let zero_target = self.constant_biguint(&BigUint::zero());
-        let zero_ff = self.biguint_to_nonnative(&zero_target);
+        let zero_ff = self.biguint_to_nonnative(&zero_target, false);
 
-        self.sub_nonnative(&zero_ff, x)
+        self.sub_nonnative(&zero_ff, x, range_check)
     }
 
-    fn inv_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>) -> NonNativeTarget<FF> {
+    fn inv_nonnative<FF: PrimeField>(&mut self, x: &NonNativeTarget<FF>, range_check: bool) -> NonNativeTarget<FF> {
         let num_limbs = x.value.num_limbs();
         let inv_biguint = self.add_virtual_biguint_target(num_limbs);
         let div = self.add_virtual_biguint_target(num_limbs);
@@ -542,6 +507,12 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         let one = self.constant_biguint(&BigUint::one());
         let expected_product = self.add_biguint(&mod_times_div, &one);
         self.connect_biguint(&product, &expected_product);
+
+        if range_check{
+            let cmp = self.cmp_biguint(&inv_biguint, &modulus);
+            let one = self.one();
+            self.connect(cmp.target, one);
+        }
 
         NonNativeTarget::<FF> {
             value: inv_biguint,
@@ -599,13 +570,14 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderNonNative<F, D>
         &mut self,
         x: &NonNativeTarget<FF>,
         b: BoolTarget,
+        range_check: bool
     ) -> NonNativeTarget<FF> {
         let not_b = self.not(b);
-        let neg = self.neg_nonnative(x);
-        let x_if_true = self.mul_nonnative_by_bool(&neg, b);
-        let x_if_false = self.mul_nonnative_by_bool(x, not_b);
+        let neg = self.neg_nonnative(x, false);
+        let x_if_true = self.mul_nonnative_by_bool(&neg, b, false);
+        let x_if_false = self.mul_nonnative_by_bool(x, not_b, false);
 
-        self.add_nonnative(&x_if_true, &x_if_false)
+        self.add_nonnative(&x_if_true, &x_if_false, range_check)
     }
 }
 
@@ -942,7 +914,7 @@ mod tests {
 
         let x = builder.constant_nonnative(x_ff);
         let y = builder.constant_nonnative(y_ff);
-        let sum = builder.add_nonnative(&x, &y);
+        let sum = builder.add_nonnative(&x, &y, true);
 
         let sum_expected = builder.constant_nonnative(sum_ff);
         builder.connect_nonnative(&sum, &sum_expected);
@@ -982,7 +954,7 @@ mod tests {
         let g = builder.constant_nonnative(g_ff);
         let h = builder.constant_nonnative(h_ff);
         let all = [a, b, c, d, e, f, g, h];
-        let sum = builder.add_many_nonnative(&all);
+        let sum = builder.add_many_nonnative(&all, true);
 
         let sum_expected = builder.constant_nonnative(sum_ff);
         builder.connect_nonnative(&sum, &sum_expected);
@@ -1012,7 +984,7 @@ mod tests {
 
         let x = builder.constant_nonnative(x_ff);
         let y = builder.constant_nonnative(y_ff);
-        let diff = builder.sub_nonnative(&x, &y);
+        let diff = builder.sub_nonnative(&x, &y, true);
 
         let diff_expected = builder.constant_nonnative(diff_ff);
         builder.connect_nonnative(&diff, &diff_expected);
@@ -1040,14 +1012,14 @@ mod tests {
         let x = builder.constant_nonnative(x_ff);
         let y = builder.constant_nonnative(y_ff);
         
-        let mut product = builder.mul_nonnative(&x, &y);
+        let mut product = builder.mul_nonnative(&x, &y, true);
         let mut product_expected = builder.constant_nonnative(product_ff);
 
         for _ in 0..n{
             let z_ff = FF::rand();
             let z = builder.constant_nonnative(z_ff);
             product_ff = product_ff * z_ff;
-            product = builder.mul_nonnative(&product, &z);
+            product = builder.mul_nonnative(&product, &z, true);
             product_expected = builder.constant_nonnative(product_ff);
         }
         builder.connect_nonnative(&product, &product_expected);
@@ -1070,7 +1042,7 @@ mod tests {
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         let x = builder.constant_nonnative(x_ff);
-        let neg_x = builder.neg_nonnative(&x);
+        let neg_x = builder.neg_nonnative(&x, true);
 
         let neg_x_expected = builder.constant_nonnative(neg_x_ff);
         builder.connect_nonnative(&neg_x, &neg_x_expected);
@@ -1094,7 +1066,7 @@ mod tests {
         let mut builder = CircuitBuilder::<F, D>::new(config);
 
         let x = builder.constant_nonnative(x_ff);
-        let inv_x = builder.inv_nonnative(&x);
+        let inv_x = builder.inv_nonnative(&x, true);
 
         let inv_x_expected = builder.constant_nonnative(inv_x_ff);
         builder.connect_nonnative(&inv_x, &inv_x_expected);

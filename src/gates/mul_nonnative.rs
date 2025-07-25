@@ -69,6 +69,16 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> MulNonnativeG
     }
 }
 
+
+// Given the nonnative targets x, y (each with 9 limbs, 9 * 29 = 261 > 256) and modulus m, we want to get r, such that
+// x * y - (q * m + r) = 0, where q and r are also nonnative targets with 29-bit limbs
+// This gates takes advantage of the limbs being 29-bits in size to optimize modular nonnative multiplication
+// It calculates the 17-limb convolution check_sum = x * y - (q * m + r) without doing carries
+// so that the value of every limb of check_sum lies in (-2^62, 2^62)
+// Then the CheckSum gate is used to check that check_sum = 0 after doing the carries in 29-bits
+//
+// NOTE: This gate is not sound for being used on its own as it needs the CheckSum gate and additional range checks for correctness
+// See the mul_nonnative() gadget in gadgets/nonnative.rs for appropriate usage
 impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> Gate<F, D> for MulNonnativeGate<F, D, FF> {
     fn id(&self) -> String {
         format!("MulNonnative() {}", FF::order())
@@ -273,20 +283,11 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             )?;
         }
 
-        let mut test: Vec<i128> = Vec::new();
-        let goldilocks = F::ORDER;
         for i in 0..(self.num_limbs * 2 - 1){
             let l = ((i as i32) - (self.num_limbs as i32) + 1).max(0) as usize;
             let r = (i + 1).min(self.num_limbs);
             let mut accum: F = F::from_canonical_u32(0);
-            let mut test_accum: i128 = 0;
             for j in l..r{
-                let test_m: i128 = modulus_base_29[j].clone().into();
-                let test_q: i128 = q_base_29[i - j].clone().into();
-                let test_x: i128 = x_base_29[j].clone().into();
-                let test_y: i128 = y_base_29[i - j].clone().into();
-                test_accum += test_q * test_m - test_x * test_y;
-                assert!((test_accum < 1i128 << 62) && ((-test_accum) < 1i128 << 62));
                 let m: F = F::from_canonical_u64(modulus_base_29[j].clone().into());
                 let q: F = F::from_canonical_u64(q_base_29[i - j].clone().into());
                 let x: F = F::from_canonical_u64(x_base_29[j].clone().into());
@@ -296,36 +297,14 @@ impl<F: RichField + Extendable<D>, const D: usize, FF: PrimeField> SimpleGenerat
             
             if i < self.num_limbs{
                 accum += F::from_canonical_u64(r_base_29[i].into());
-                test_accum += r_base_29[i] as i128;
             }
-            test.push(test_accum);
-            assert!((test_accum < 1i128 << 62) && ((-test_accum) < 1i128 << 62));
 
-            
-            let curr_val = accum.clone().to_canonical_u64();
-            let mut actual_val: i128 = curr_val as i128;
-            if curr_val > 1u64 << 62{
-                actual_val = actual_val - (goldilocks as i128);
-            }
-            assert!(actual_val == test_accum);
             out_buffer.set_target(
                 self.check_sum(i),
                 accum,
             )?;
             
 
-        }
-        let mut b: Vec<i128> = Vec::new();
-        let mut last: i128 = 0;
-        let modulo = 1i128<<29;
-        for i in 0..(2 * self.num_limbs - 1){
-            let curr = test[i] + last;
-            assert!(curr % modulo == 0);
-            last = curr / modulo;
-            b.push(last);
-            if i == 2 * self.num_limbs - 2{
-                assert!(last == 0);
-            }
         }
         Ok(())
     }
@@ -370,6 +349,18 @@ impl<F: RichField + Extendable<D>, const D: usize> Default for CheckSumGate<F, D
         Self::new_from_config(&CircuitConfig::standard_recursion_config())
     }
 }
+
+// This gate takes as input a value with 17 limbs, where the value of every limb lies between (-2^62, 2^62)
+// It checks that after doing carries in base 2^29, this value is equal to zero
+// It does this by calculating the carries in an array b, so that
+// b_0 * 2^29 = a_0
+// b_1 * 2^29 = a_1 + b_0
+// ...
+// a_16 + b_15 = 0
+//
+// External range checks should be performed outside of this gate to ensure that all values of b are in the range (-2^33, 2^33)
+// Note that the actual b values that this gate computes are offsetted by 2^33, so that it suffices to check that b_i are in the range (0, 2^34)
+// This is handled in mul_nonnative() gadget in gadgets/nonnative.rs
 
 impl<F: RichField + Extendable<D>, const D: usize> CheckSumGate<F, D> {
     pub fn new_from_config(_config: &CircuitConfig) -> Self {
@@ -545,38 +536,32 @@ impl<F: RichField + Extendable<D>, const D: usize> SimpleGenerator<F, D> for Che
 }
 
 
-// #[cfg(test)]
-// mod tests {
-//     use anyhow::Result;
-//     use plonky2::field::extension::quartic::QuarticExtension;
-//     use plonky2::field::goldilocks_field::GoldilocksField;
-//     use plonky2::field::types::{PrimeField64, Sample};
-//     use plonky2::gates::gate_testing::{test_eval_fns, test_low_degree};
-//     use plonky2::hash::hash_types::HashOut;
-//     use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
-//     use rand::rngs::OsRng;
-//     use rand::Rng;
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use plonky2::field::goldilocks_field::GoldilocksField;
+    use plonky2::gates::gate_testing::{test_eval_fns, test_low_degree};
+    use plonky2::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
+    use plonky2::field::secp256k1_base::Secp256K1Base;
+    use super::*;
 
-//     use super::*;
+    #[test]
+    fn low_degree() {
+        type FF = Secp256K1Base;
+        type C = PoseidonGoldilocksConfig;
+        type F = <C as GenericConfig<D>>::F;
+        const D: usize = 2;
+        let config = CircuitConfig::standard_ecc_config();
+        test_low_degree::<GoldilocksField, _, D>(MulNonnativeGate::<F, D, FF>::new_from_config(&config))
+    }
 
-//     const BITS: usize = 29;
-//     #[test]
-//     fn low_degree() {
-//         let config = 
-//         test_low_degree::<GoldilocksField, _, 4>(MulNonnativeGate::new_from_config(config) {
-//             num_: 3,
-//             _phantom: PhantomData,
-//         })
-//     }
-
-//     #[test]
-//     fn eval_fns() -> Result<()> {
-//         const D: usize = 2;
-//         type C = PoseidonGoldilocksConfig;
-//         type F = <C as GenericConfig<D>>::F;
-//         test_eval_fns::<F, C, _, D>(MulNonnativeGate {
-//             num_ops: 3,
-//             _phantom: PhantomData,
-//         })
-//     }
-// }
+    #[test]
+    fn eval_fns() -> Result<()> {
+        type FF = Secp256K1Base;
+        type C = PoseidonGoldilocksConfig;
+        type F = <C as GenericConfig<D>>::F;
+        const D: usize = 2;
+        let config = CircuitConfig::standard_ecc_config();
+        test_eval_fns::<F, C, _, D>(MulNonnativeGate::<F, D, FF>::new_from_config(&config))
+    }
+}

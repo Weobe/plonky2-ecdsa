@@ -74,11 +74,11 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderGlv<F, D>
         });
 
         // Check that `k1_raw + GLV_S * k2_raw == k`.
-        let k1_raw = self.nonnative_conditional_neg(&k1, k1_neg);
-        let k2_raw = self.nonnative_conditional_neg(&k2, k2_neg);
+        let k1_raw = self.nonnative_conditional_neg(&k1, k1_neg, false);
+        let k2_raw = self.nonnative_conditional_neg(&k2, k2_neg, false);
         let s = self.constant_nonnative(GLV_S);
-        let mut should_be_k = self.mul_nonnative(&s, &k2_raw);
-        should_be_k = self.add_nonnative(&should_be_k, &k1_raw);
+        let mut should_be_k = self.mul_nonnative(&s, &k2_raw, false);
+        should_be_k = self.add_nonnative(&should_be_k, &k1_raw, true);
         self.connect_nonnative(&should_be_k, k);
 
         (k1, k2, k1_neg, k2_neg)
@@ -92,7 +92,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilderGlv<F, D>
         let (k1, k2, k1_neg, k2_neg) = self.decompose_secp256k1_scalar(k);
 
         let beta = self.secp256k1_glv_beta();
-        let beta_px = self.mul_nonnative(&beta, &p.x);
+        let beta_px = self.mul_nonnative(&beta, &p.x, true);
         let sp = AffinePointTarget::<Secp256K1> {
             x: beta_px,
             y: p.y.clone(),
