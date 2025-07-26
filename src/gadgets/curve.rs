@@ -24,6 +24,13 @@ impl<C: Curve> AffinePointTarget<C> {
     }
 }
 
+// For all the functions with range_check argument, range_check should only be false in cases where this is not the last curve operation to be performed
+// The soundness of the nonnative arithmetic holds even when doing operations with numbers bigger than the modulus as long as
+// it is known that the output fits in 9 limbs of 29 bits each (i.e. <= 2^261)
+//
+// However if this is the final curve operation, it should be checked that the output lies in [0, modulus - 1]
+// When in doubt, having range_check=true is the safest option, this option is available mainly to optimize gate count when it is a bottleneck
+
 pub trait CircuitBuilderCurve<F: RichField + Extendable<D>, const D: usize> {
     fn constant_affine_point<C: Curve>(&mut self, point: AffinePoint<C>) -> AffinePointTarget<C>;
 
